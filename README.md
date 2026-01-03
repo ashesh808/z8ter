@@ -13,11 +13,24 @@
 ```bash
 z8 new myapp
 cd myapp
-python3 -m venv venv
-source venv/bin/activate  # Windows: .\.venv\Scripts\activate
+uv sync              # Install Python dependencies
+npm install          # Install Node dependencies
+uv run z8 run dev    # Start the dev server
+```
+
+<details>
+<summary>Alternative: Using pip instead of uv</summary>
+
+```bash
+z8 new myapp
+cd myapp
+python3 -m venv .venv
+source .venv/bin/activate  # Windows: .venv\Scripts\Activate.ps1
 pip install -r requirements.txt
+npm install
 z8 run dev
 ```
+</details>
 
 ---
 
@@ -36,6 +49,10 @@ z8 run dev
 ## Installation
 
 ```bash
+# Using uv (recommended)
+uv add z8ter
+
+# Or using pip
 pip install z8ter
 ```
 

@@ -155,5 +155,6 @@ def new_project(project_name: str, path: str | None = None) -> int:
     print(f"✓ Created new Z8ter project at: {target}")
     print("Next steps:")
     print(f"  cd {target}")
-    print("  z8 dev")
+    print("  uv sync && npm install")
+    print("  uv run z8 run dev")
     return RC_OK
