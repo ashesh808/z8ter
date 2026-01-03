@@ -14,6 +14,7 @@ A minimal starter template for building web apps with **Z8ter (Starlette + Jinja
 ### 1) Prerequisites
 
 * **Python** 3.10+ (3.11+ recommended)
+* **uv** — fast Python package manager ([install guide](https://docs.astral.sh/uv/getting-started/installation/))
 * **Node.js** 18+ and **npm**
 * macOS, Linux, or Windows (PowerShell)
 
@@ -32,16 +33,13 @@ cd myapp
 ### 2) Python setup
 
 ```bash
-# create and activate a virtual environment (recommended)
-python -m venv .venv
-# macOS/Linux
-source .venv/bin/activate
-# Windows (PowerShell)
-.venv\Scripts\Activate.ps1
+# Install dependencies with uv (recommended)
+uv sync
 
-# install Z8ter and friends
-pip install --upgrade pip
-pip install z8ter==0.1.2
+# Or using pip (alternative)
+python -m venv .venv
+source .venv/bin/activate  # Windows: .venv\Scripts\Activate.ps1
+pip install -r requirements.txt
 ```
 
 ### 3) Node setup
@@ -143,9 +141,9 @@ npm run build
 #   - TypeScript → static/js/...
 
 # 2) Run the server (one of):
-z8 run            # or `z8 run --host 0.0.0.0 --port 8000`
+uv run z8 run     # or `uv run z8 run --host 0.0.0.0 --port 8000`
 # or uvicorn directly if you expose your ASGI app
-# uvicorn yourmodule:app --host 0.0.0.0 --port 8000
+# uv run uvicorn main:app --host 0.0.0.0 --port 8000
 ```
 
 Deploy behind Nginx/Caddy/Traefik as you normally would for an ASGI app.

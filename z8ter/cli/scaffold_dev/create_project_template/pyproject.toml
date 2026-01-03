@@ -1,0 +1,16 @@
+[project]
+name = "z8ter-app"
+version = "0.1.0"
+description = "A Z8ter web application"
+readme = "README.md"
+requires-python = ">=3.10"
+
+dependencies = [
+    "z8ter>=0.2.0",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest",
+    "ruff",
+]
