@@ -1,7 +1,9 @@
 .mypy_cache
 .env
 venv
+.venv
 .vscode
+uv.lock
 dist
 __pycache__/
 *.py[cod]
