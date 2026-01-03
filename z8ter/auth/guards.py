@@ -25,6 +25,7 @@ Security notes:
 """
 
 from functools import wraps
+from urllib.parse import quote
 
 from z8ter.requests import Request
 from z8ter.responses import RedirectResponse
@@ -57,7 +58,8 @@ def login_required(handler):
             next_url = request.url.path
             if request.url.query:
                 next_url = f"{next_url}?{request.url.query}"
-            return RedirectResponse(f"{login_path}?next={next_url}", status_code=303)
+            redirect_url = f"{login_path}?next={quote(next_url, safe='')}"
+            return RedirectResponse(redirect_url, status_code=303)
 
         return await handler(self, request, *args, **kwargs)
 

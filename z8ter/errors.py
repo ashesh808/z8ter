@@ -16,7 +16,7 @@ from z8ter.responses import JSONResponse
 
 
 async def http_exc(request: Request, exc: HTTPException) -> JSONResponse:
-    """Handels Starlette HTTPException.
+    """Handle Starlette HTTPException.
 
     Returns a structured JSON error response, preserving the exception's
     status code and detail message.
