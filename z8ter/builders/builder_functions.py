@@ -20,18 +20,20 @@ Security:
 
 from __future__ import annotations
 
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 from starlette.datastructures import URLPath
 from starlette.middleware.sessions import SessionMiddleware
 
-from z8ter import get_templates
 from z8ter.auth.middleware import AuthSessionMiddleware
 from z8ter.builders.helpers import ensure_services, get_config_value
 from z8ter.config import build_config
 from z8ter.core import Z8ter
 from z8ter.errors import register_exception_handlers
 from z8ter.vite import vite_script_tag
+
+if TYPE_CHECKING:
+    pass
 
 
 def use_service_builder(context: dict[str, Any]) -> None:
@@ -108,8 +110,10 @@ def use_templating_builder(context: dict[str, Any]) -> None:
         - Sets `context["templates"]`.
         - Publishes `services["templates"]`.
     """
+    import z8ter
+
     app: Z8ter = context["app"]
-    templates = get_templates()
+    templates = z8ter.get_templates()
 
     def _url_for(name: str, filename: str | None = None, **params: Any) -> str:
         if filename is not None:

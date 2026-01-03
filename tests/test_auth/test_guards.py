@@ -61,7 +61,8 @@ def test_login_required_redirects_when_user_missing() -> None:
 
     assert isinstance(result, RedirectResponse)
     assert result.status_code == 303
-    assert result.headers["location"] == "/login?next=/dashboard?tab=1"
+    # The next parameter should be URL-encoded to prevent malformed URLs
+    assert result.headers["location"] == "/login?next=%2Fdashboard%3Ftab%3D1"
 
 
 def test_login_required_passes_through_when_user_present() -> None:

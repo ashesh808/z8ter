@@ -14,21 +14,30 @@ Notes:
 
 """
 
+from importlib.resources import as_file, files
+
 from jinja2 import (
     ChoiceLoader,
     Environment,
     FileSystemLoader,
-    PackageLoader,
     select_autoescape,
 )
 
 import z8ter
 
+
+def _get_scaffold_path() -> str:
+    """Get the path to the scaffold directory within the z8ter package."""
+    scaffold_ref = files("z8ter").joinpath("scaffold")
+    with as_file(scaffold_ref) as scaffold_path:
+        return str(scaffold_path)
+
+
 env = Environment(
     loader=ChoiceLoader(
         [
             FileSystemLoader("scaffold_dev"),
-            PackageLoader("z8ter", "scaffold"),
+            FileSystemLoader(_get_scaffold_path()),
         ]
     ),
     autoescape=select_autoescape(
