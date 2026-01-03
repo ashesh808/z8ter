@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from z8ter import STATIC_PATH
+import z8ter
 from z8ter.route_builders import (
     build_file_route,
     build_routes_from_apis,
@@ -23,7 +23,7 @@ def test_build_routes_from_apis_discovers_api_mounts() -> None:
 
 def test_build_file_route_mounts_static_directory() -> None:
     mount = build_file_route()
-    if STATIC_PATH.exists():
+    if z8ter.STATIC_PATH.exists():
         assert mount is not None
         assert mount.path == "/static"
     else:  # pragma: no cover - repository always ships static, but keep safety

@@ -8,8 +8,6 @@ from __future__ import annotations
 
 from starlette.config import Config
 
-from z8ter import BASE_DIR
-
 
 def build_config(env_file: str) -> Config:
     """Build a Config object with Z8ter defaults.
@@ -28,6 +26,8 @@ def build_config(env_file: str) -> Config:
         - BASE_DIR: Absolute path to the current application base directory.
 
     """
+    import z8ter
+
     cf: Config = Config(env_file)
-    cf.file_values["BASE_DIR"] = str(BASE_DIR)
+    cf.file_values["BASE_DIR"] = str(z8ter.BASE_DIR)
     return cf

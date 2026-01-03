@@ -19,12 +19,16 @@ from typing import Any
 import yaml
 from starlette.templating import Jinja2Templates
 
-from z8ter import BASE_DIR, get_templates
 from z8ter.responses import Response
 
-contents_path = BASE_DIR / "content"
-
 logger = logging.getLogger("z8ter")
+
+
+def _get_contents_path() -> Path:
+    """Get the path to the content directory."""
+    import z8ter
+
+    return z8ter.BASE_DIR / "content"
 
 
 def render(template_name: str, context: dict[str, Any] | None = None) -> Response:
@@ -43,7 +47,9 @@ def render(template_name: str, context: dict[str, Any] | None = None) -> Respons
         - Response type is framework-specific but generally behaves like ASGI.
 
     """
-    templates: Jinja2Templates = get_templates()
+    import z8ter
+
+    templates: Jinja2Templates = z8ter.get_templates()
     return templates.TemplateResponse(template_name, context)
 
 
@@ -55,7 +61,7 @@ def load_props(page_id: str, base: Path | None = None) -> dict[str, Any]:
 
     Args:
         page_id: Identifier like "about" or "app.home".
-        base: Optional override for the content root (defaults to `contents_path`).
+        base: Optional override for the content root (defaults to content path).
 
     Returns:
         {"page_content": <mapping>}
@@ -64,7 +70,7 @@ def load_props(page_id: str, base: Path | None = None) -> dict[str, Any]:
         json.JSONDecodeError / yaml.YAMLError: If content is malformed.
 
     """
-    root = base if base is not None else contents_path
+    root = base if base is not None else _get_contents_path()
     rel = page_id.replace(".", "/")
 
     candidates = [
