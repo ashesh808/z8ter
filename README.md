@@ -1,16 +1,29 @@
 # Z8ter
 
-**Z8ter** is a lightweight, **async Python web framework** built on **Starlette**, designed for rapid development **without compromising UX**. It combines **SSR-first rendering**, **auto-discovered routes**, **auth scaffolding**, and **CLI tooling** into one cohesive developer experience.
+**Z8ter** is a lightweight, async Python web framework built on [Starlette](https://www.starlette.io/), designed for rapid development without compromising UX. It combines SSR-first rendering, auto-discovered routes, pluggable authentication, and CLI tooling into one cohesive developer experience.
 
 ---
 
-> ⚠️ **Status: Public Alpha** — Z8ter is under active development and **not yet recommended for production**. APIs and module paths may change without notice.
+> **Status: Public Alpha** — Z8ter is under active development and not yet recommended for production. APIs may change without notice.
+
+---
+
+## Features
+
+- **File-based Routing** — Views under `endpoints/views/` map to routes automatically
+- **SSR + Islands** — Server-side rendering by default, with React "islands" for interactivity
+- **Decorator-driven APIs** — Define REST APIs using decorators; auto-mounted under `/api/<name>`
+- **Pluggable Auth** — Session middleware, Argon2 password hashing, and route guards like `@login_required`
+- **Composable Builder** — `AppBuilder` wires config, templating, Vite, sessions, and auth in order
+- **CLI Tooling** — Scaffold projects, pages, and APIs with `z8 new`, `z8 create_page`, `z8 create_api`
+- **Modern Frontend** — Vite, React, TypeScript, Tailwind CSS, and DaisyUI ready out of the box
 
 ---
 
 ## Quickstart
 
 ```bash
+# Create a new project
 z8 new myapp
 cd myapp
 uv sync              # Install Python dependencies
@@ -32,17 +45,7 @@ z8 run dev
 ```
 </details>
 
----
-
-## Features
-
-1. **File-based routing** — Files under `views/` map to routes automatically, each paired with a Jinja template and optional Python logic.
-2. **SSR + Islands** — Server-side rendering by default, with per-page JS “islands” in `static/js/pages/<page_id>.js` for interactivity.
-3. **Decorator-driven APIs** — Define class-based APIs using decorators; auto-mounted under `/api/<id>`.
-4. **Auth & Guards** — Session middleware, Argon2 password hashing, and decorators like `@login_required` for route protection.
-5. **Composed Builder** — `AppBuilder` wires config, templating, Vite, sessions, and error handling in a predictable order.
-6. **CLI Tooling** — Scaffold apps, views, and APIs with `z8 new`, `z8 create_page`, `z8 create_api`; serve with `z8 run dev`.
-7. **React, DaisyUI, Tailwind Ready** — Ships with modern frontend defaults for seamless full-stack workflows.
+Visit `http://localhost:8000` to see your app.
 
 ---
 
@@ -56,35 +59,112 @@ uv add z8ter
 pip install z8ter
 ```
 
----
+For development dependencies:
 
-## Authentication Example
-
-```python
-from z8ter.endpoints.view import View
-from z8ter.auth.guards import login_required
-
-class Dashboard(View):
-    @login_required
-    async def get(self, request):
-        return self.render(request, "dashboard.jinja")
+```bash
+pip install z8ter[dev]
 ```
 
 ---
 
-## AppBuilder Example
+## Project Structure
+
+```
+myapp/
+├── main.py                 # Application entry point
+├── .env                    # Environment configuration
+├── endpoints/
+│   ├── views/              # SSR page views → URLs
+│   │   ├── index.py        # → /
+│   │   └── about.py        # → /about
+│   └── api/                # REST API endpoints
+│       └── hello.py        # → /api/hello/*
+├── templates/              # Jinja2 templates
+│   ├── base.jinja
+│   └── pages/
+├── content/                # YAML page content
+├── static/                 # Static assets
+└── src/ts/                 # TypeScript/React code
+    ├── app.ts
+    └── ui-components/      # React Web Components
+```
+
+---
+
+## Creating Pages
+
+```bash
+z8 create_page products
+```
 
 ```python
+# endpoints/views/products.py
+from z8ter.endpoints.view import View
+from z8ter.requests import Request
+from z8ter.responses import Response
+
+
+class Products(View):
+    async def get(self, request: Request) -> Response:
+        return self.render(request, "pages/products.jinja")
+```
+
+---
+
+## Creating APIs
+
+```bash
+z8 create_api users
+```
+
+```python
+# endpoints/api/users.py
+from z8ter.endpoints.api import API
+from z8ter.requests import Request
+from z8ter.responses import JSONResponse
+
+
+class Users(API):
+    @API.endpoint("GET", "/")
+    async def list_users(self, request: Request):
+        return JSONResponse({"ok": True, "users": []})
+
+    @API.endpoint("GET", "/{user_id:int}")
+    async def get_user(self, request: Request):
+        user_id = request.path_params["user_id"]
+        return JSONResponse({"ok": True, "user": {"id": user_id}})
+```
+
+---
+
+## Application Setup
+
+```python
+# main.py
 from z8ter.builders.app_builder import AppBuilder
-from myapp.repos import MySessionRepo, MyUserRepo
 
 builder = AppBuilder()
 builder.use_config(".env")
 builder.use_templating()
 builder.use_vite()
-builder.use_app_sessions(secret_key="supersecret")
-builder.use_auth_repos(session_repo=MySessionRepo(), user_repo=MyUserRepo())
+builder.use_errors()
+
+app = builder.build(debug=True)
+```
+
+### With Authentication
+
+```python
+from z8ter.builders.app_builder import AppBuilder
+from app.repos import SessionRepo, UserRepo
+
+builder = AppBuilder()
+builder.use_config(".env")
+builder.use_templating()
+builder.use_vite()
+builder.use_auth_repos(session_repo=SessionRepo(), user_repo=UserRepo())
 builder.use_authentication()
+builder.use_app_sessions()
 builder.use_errors()
 
 app = builder.build(debug=True)
@@ -92,55 +172,71 @@ app = builder.build(debug=True)
 
 ---
 
+## Protected Routes
+
+```python
+from z8ter.endpoints.view import View
+from z8ter.auth.guards import login_required
+
+
+class Dashboard(View):
+    @login_required
+    async def get(self, request):
+        user = request.state.user
+        return self.render(request, "pages/dashboard.jinja", {"user": user})
+```
+
+---
+
 ## Module Overview
 
-| Module                             | Purpose                                                                            |
-| ---------------------------------- | ---------------------------------------------------------------------------------- |
-| **`z8ter.auth`**                   | Auth contracts, Argon2 crypto, guards, and session middleware                      |
-| **`z8ter.builders`**               | `AppBuilder` and composable setup steps for config, templating, vite, auth, errors |
-| **`z8ter.cli`**                    | CLI entrypoints: `new`, `create_page`, `create_api`, and `run dev`                 |
-| **`z8ter.endpoints`**              | Base `API` and `View` classes for SSR and REST endpoints                           |
-| **`z8ter.route_builders`**         | Discovers SSR and API routes from filesystem                                       |
-| **`z8ter.responses` / `requests`** | Wrappers around Starlette primitives                                               |
-| **`z8ter.logging_utils`**          | Rich logging with `CancelledError` suppression                                     |
-| **`z8ter.errors`**                 | Centralized 404/500 error handling                                                 |
-| **`z8ter.vite`**                   | Dev/prod script tag helpers for Vite asset loading                                 |
-| **`z8ter.config`**                 | Config loader with `BASE_DIR` and Starlette settings                               |
-| **`z8ter.core`**                   | Lightweight ASGI wrapper around Starlette                                          |
+| Module                 | Purpose                                                 |
+| ---------------------- | ------------------------------------------------------- |
+| `z8ter.core`           | ASGI wrapper around Starlette                           |
+| `z8ter.endpoints`      | Base `View` and `API` classes                           |
+| `z8ter.builders`       | `AppBuilder` and composable setup steps                 |
+| `z8ter.auth`           | Session management, crypto, guards, middleware          |
+| `z8ter.route_builders` | Auto-discovery of views and APIs                        |
+| `z8ter.vite`           | Vite asset integration (dev server + manifest)          |
+| `z8ter.cli`            | CLI commands: `new`, `create_page`, `create_api`, `run` |
+| `z8ter.config`         | Environment-based configuration                         |
+| `z8ter.errors`         | Centralized error handling                              |
 
 ---
 
-## Framework Architecture
+## CLI Commands
 
-**Backend Flow**
-
-- `route_builders` walks your project structure to register SSR `View` classes and API mounts.
-- `View.render()` merges `content/*.yaml` data into Jinja templates, injecting `page_id` for client hydration.
-- `API.endpoint()` decorators map handlers into Starlette routes automatically.
-- Auth pipeline: `middleware → guards → session manager` ensures secure user sessions.
-- Unified error and response modules abstract Starlette internals.
-
-**Frontend Pipeline**
-
-- `src/ts/app.ts` bootstraps JS “islands” using `data-page` attributes.
-- Solid.js components (e.g. `z8-clock.tsx`) render inline via `solid-element` (no shadow DOM).
-- `vite.config.ts` compiles and writes manifest under `/static/js/.vite`.
-- `z8ter/vite.py` injects dev or manifest-based `<script>` tags dynamically.
-- Tailwind and DaisyUI ship preconfigured for cohesive UI design.
-
-**CLI & Scaffolding**
-
-- `z8 new` → initializes a full project tree (safe for wheel installs).
-- `z8 create_page` / `create_api` → generate views, content YAML, and JS islands.
-- `z8 run dev` → launches Uvicorn with rich logging and live reload.
+| Command                        | Description                                      |
+| ------------------------------ | ------------------------------------------------ |
+| `z8 new <name>`                | Create a new project                             |
+| `z8 create_page <name>`        | Scaffold a page (view + template + content + TS) |
+| `z8 create_api <name>`         | Scaffold an API endpoint                         |
+| `z8 run [dev\|prod\|LAN\|WAN]` | Run the server                                   |
 
 ---
 
-## Philosophy
+## Documentation
 
-> “Small surface area, sharp tools.”
+Full documentation is available in the [`docs/`](docs/) folder:
 
-- **SSR-first** with optional client interactivity
-- **Conventions over configuration**
-- **Predictable lifecycle**: builder → routes → middleware → templates
-- **Full-stack parity** between Python and JS layers
+- [Getting Started](docs/getting-started.md)
+- [Project Structure](docs/project-structure.md)
+- [Views & Pages](docs/views.md)
+- [API Endpoints](docs/api-endpoints.md)
+- [React Components](docs/react-components.md)
+- [Authentication](docs/authentication.md)
+- [Configuration](docs/configuration.md)
+- [CLI Reference](docs/cli.md)
+
+---
+
+## Requirements
+
+- Python 3.10+
+- Node.js 18+ (for frontend tooling)
+
+---
+
+## License
+
+MIT License — see [LICENSE](LICENSE) for details.

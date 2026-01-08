@@ -15,8 +15,7 @@ from pathlib import Path
 
 from markupsafe import Markup
 
-# Path to compiled Vite assets (relative to project base).
-DIST = Path("static/js/.vite")
+import z8ter
 
 # Optional dev server base URL, e.g., "http://localhost:5173".
 VITE_DEV_SERVER = os.getenv("VITE_DEV_SERVER", "").rstrip("/")
@@ -24,6 +23,11 @@ VITE_DEV_SERVER = os.getenv("VITE_DEV_SERVER", "").rstrip("/")
 # Internal manifest cache and last modified time.
 _manifest_cache: dict[str, object] | None = None
 _manifest_mtime: float | None = None
+
+
+def _get_dist_path() -> Path:
+    """Return the Vite dist directory path, resolved dynamically."""
+    return z8ter.STATIC_PATH / "js" / ".vite"
 
 
 def _load_manifest() -> dict:
@@ -38,7 +42,7 @@ def _load_manifest() -> dict:
 
     """
     global _manifest_cache, _manifest_mtime
-    path = DIST / "manifest.json"
+    path = _get_dist_path() / "manifest.json"
     stat = path.stat()
     if _manifest_cache is None or _manifest_mtime != stat.st_mtime:
         _manifest_cache = json.loads(path.read_text())

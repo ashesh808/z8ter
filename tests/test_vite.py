@@ -28,7 +28,7 @@ def test_vite_script_tag_manifest_mode(
     }
     (manifest_dir / "manifest.json").write_text(json.dumps(manifest))
 
-    monkeypatch.setattr(vite, "DIST", manifest_dir)
+    monkeypatch.setattr(vite, "_get_dist_path", lambda: manifest_dir)
     monkeypatch.setattr(vite, "_manifest_cache", None)
     monkeypatch.setattr(vite, "_manifest_mtime", None)
     monkeypatch.setattr(vite, "VITE_DEV_SERVER", "")

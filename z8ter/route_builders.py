@@ -30,6 +30,7 @@ from starlette.endpoints import HTTPEndpoint
 from starlette.routing import Mount, Route
 from starlette.staticfiles import StaticFiles
 
+import z8ter
 from z8ter.endpoints.api import API
 from z8ter.endpoints.view import View
 
@@ -240,8 +241,6 @@ def build_file_route() -> Mount | None:
         A Starlette `Mount` for static files or `None` if the path is absent.
 
     """
-    import z8ter
-
     static_path = z8ter.STATIC_PATH
     if static_path and Path(static_path).exists():
         return Mount("/static", StaticFiles(directory=str(static_path)), name="static")

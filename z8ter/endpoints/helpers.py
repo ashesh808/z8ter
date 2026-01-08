@@ -19,15 +19,14 @@ from typing import Any
 import yaml
 from starlette.templating import Jinja2Templates
 
+import z8ter
 from z8ter.responses import Response
 
 logger = logging.getLogger("z8ter")
 
 
 def _get_contents_path() -> Path:
-    """Get the path to the content directory."""
-    import z8ter
-
+    """Return the content directory path, resolved dynamically."""
     return z8ter.BASE_DIR / "content"
 
 
@@ -47,8 +46,6 @@ def render(template_name: str, context: dict[str, Any] | None = None) -> Respons
         - Response type is framework-specific but generally behaves like ASGI.
 
     """
-    import z8ter
-
     templates: Jinja2Templates = z8ter.get_templates()
     return templates.TemplateResponse(template_name, context)
 
@@ -79,6 +76,7 @@ def load_props(page_id: str, base: Path | None = None) -> dict[str, Any]:
         root / f"{rel}.yml",
     ]
 
+    data = None
     for path in candidates:
         if path.is_file():
             text = path.read_text(encoding="utf-8")

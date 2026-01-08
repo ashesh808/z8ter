@@ -4,6 +4,7 @@ from starlette.applications import Starlette
 from starlette.requests import Request
 from starlette.staticfiles import StaticFiles
 
+import z8ter
 from z8ter.builders import builder_functions as bf
 from z8ter.core import Z8ter
 from z8ter.endpoints.helpers import load_props, render
@@ -11,7 +12,9 @@ from z8ter.endpoints.helpers import load_props, render
 
 def _prime_templates() -> Z8ter:
     starlette_app = Starlette()
-    starlette_app.mount("/static", StaticFiles(directory="static"), name="static")
+    starlette_app.mount(
+        "/static", StaticFiles(directory=str(z8ter.STATIC_PATH)), name="static"
+    )
     app = Z8ter(starlette_app=starlette_app, debug=False)
     ctx = {"app": app, "services": {}}
     bf.use_templating_builder(ctx)

@@ -12,13 +12,13 @@ import z8ter
 def repo_app_dir() -> Path:
     """Ensure tests resolve paths against the repository sample app.
 
-    The project ships a demo application under the repo root (templates,
+    The project ships a demo application under z8ter-app/ (templates,
     endpoints, content, etc.). Many utilities rely on `z8ter.get_app_dir()`
-    to locate those assets, so we point the resolver at the repository root
-    for every test run.
+    to locate those assets, so we point the resolver at the z8ter-app
+    directory for every test run.
     """
     previous = z8ter.get_app_dir()
-    base = Path(__file__).resolve().parent.parent
+    base = Path(__file__).resolve().parent.parent / "z8ter-app"
     if str(base) not in sys.path:
         sys.path.insert(0, str(base))
     z8ter.set_app_dir(base)
