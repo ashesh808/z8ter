@@ -25,7 +25,6 @@ from typing import TYPE_CHECKING, Any
 from starlette.datastructures import URLPath
 from starlette.middleware.sessions import SessionMiddleware
 
-from z8ter.auth.middleware import AuthSessionMiddleware
 from z8ter.builders.helpers import ensure_services, get_config_value
 from z8ter.config import build_config
 from z8ter.core import Z8ter
@@ -231,7 +230,18 @@ def use_authentication_builder(context: dict[str, Any]) -> None:
     """Attach authentication session middleware once.
 
     Guarded by a private sentinel to avoid double-insertion.
+
+    Raises:
+        ImportError: If z8ter-auth package is not installed.
     """
+    try:
+        from z8ter.auth.middleware import AuthSessionMiddleware
+    except ImportError as e:
+        raise ImportError(
+            "z8ter-auth is required for authentication. "
+            "Install it with: pip install z8ter-auth"
+        ) from e
+
     app: Z8ter = context["app"]
     state = app.starlette_app.state
     if getattr(state, "_z8_auth_added", False):
