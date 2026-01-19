@@ -372,3 +372,49 @@ def use_security_headers_builder(context: dict[str, Any]) -> None:
         permissions_policy=permissions_policy,
     )
     state._z8_security_headers_added = True
+
+
+def use_health_check_builder(context: dict[str, Any]) -> None:
+    """Add a health check endpoint at /health.
+
+    Context inputs:
+        - health_check_path (optional): path for health endpoint (default: "/health").
+        - health_check_include_details (optional): include service status details.
+
+    Notes:
+        - Returns JSON: {"status": "healthy", "version": "...", ...}
+        - Useful for container orchestration (Docker, Kubernetes).
+        - Exempt from rate limiting by default.
+    """
+    from starlette.responses import JSONResponse
+    from starlette.routing import Route
+
+    import z8ter
+
+    app: Z8ter = context["app"]
+    state = app.starlette_app.state
+    if getattr(state, "_z8_health_added", False):
+        return
+
+    path = context.get("health_check_path", "/health")
+    include_details = context.get("health_check_include_details", False)
+
+    async def health_check(request):
+        response = {
+            "status": "healthy",
+            "version": z8ter.__version__,
+        }
+
+        if include_details:
+            # Add service status details
+            services = getattr(state, "services", {})
+            response["services"] = {
+                name: "available" for name in services.keys()
+            }
+
+        return JSONResponse(response)
+
+    # Add route to the app
+    route = Route(path, health_check, methods=["GET"], name="health_check")
+    app.starlette_app.routes.append(route)
+    state._z8_health_added = True
