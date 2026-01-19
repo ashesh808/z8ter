@@ -29,10 +29,16 @@ from z8ter.builders.helpers import ensure_services, get_config_value
 from z8ter.config import build_config
 from z8ter.core import Z8ter
 from z8ter.errors import register_exception_handlers
+from z8ter.security.csrf import CSRFMiddleware
+from z8ter.security.headers import SecurityHeadersMiddleware
+from z8ter.security.rate_limit import RateLimitConfig, RateLimitMiddleware
 from z8ter.vite import vite_script_tag
 
 if TYPE_CHECKING:
     pass
+
+# Minimum secret key length for security
+MIN_SECRET_KEY_LENGTH = 32
 
 
 def use_service_builder(context: dict[str, Any]) -> None:
@@ -64,21 +70,21 @@ def use_service_builder(context: dict[str, Any]) -> None:
 
     if name in services and not replace:
         raise RuntimeError(
-            f"Z8ter: service '{name}' already registered.Pass replace=True to override."
+            f"Z8ter: service '{name}' already registered. Pass replace=True to override."
         )
 
     services[name] = obj
-    needs_config = hasattr(obj, "set_config") or hasattr(obj, "config")
-    if needs_config:
+
+    # Inject config if service has a set_config method
+    # Note: We only support set_config() method, not direct attribute assignment,
+    # to avoid overwriting existing data or failing on read-only properties.
+    if hasattr(obj, "set_config") and callable(getattr(obj, "set_config")):
         cfg = services.get("config")
         if cfg is None:
             raise RuntimeError(
                 f"Z8ter: cannot inject config into '{name}' before use_config()."
             )
-        if hasattr(obj, "set_config"):
-            obj.set_config(cfg)
-        elif hasattr(obj, "config"):
-            obj.config = cfg
+        obj.set_config(cfg)
 
 
 def use_config_builder(context: dict[str, Any]) -> None:
@@ -206,6 +212,7 @@ def use_app_sessions_builder(context: dict[str, Any]) -> None:
 
     Raises:
         TypeError: If no secret key can be resolved.
+        ValueError: If secret key is too short (< 32 characters).
 
     Notes:
         - Cookie name is fixed to `z8_app_sess`. SameSite=Lax, 7-day max_age.
@@ -217,6 +224,11 @@ def use_app_sessions_builder(context: dict[str, Any]) -> None:
     secret_key = context.get("secret_key") or secret_key
     if not secret_key:
         raise TypeError("Z8ter: secret key is required for app sessions.")
+    if len(secret_key) < MIN_SECRET_KEY_LENGTH:
+        raise ValueError(
+            f"Z8ter: APP_SESSION_KEY must be at least {MIN_SECRET_KEY_LENGTH} characters. "
+            "Generate with: python -c 'import secrets; print(secrets.token_hex(32))'"
+        )
     app.starlette_app.add_middleware(
         SessionMiddleware,
         secret_key=secret_key,
@@ -248,3 +260,115 @@ def use_authentication_builder(context: dict[str, Any]) -> None:
         return
     app.starlette_app.add_middleware(AuthSessionMiddleware)
     state._z8_auth_added = True
+
+
+def use_csrf_builder(context: dict[str, Any]) -> None:
+    """Enable CSRF protection middleware.
+
+    Context inputs:
+        - secret_key (optional): overrides APP_SESSION_KEY from config.
+        - csrf_exempt_paths (optional): list of path prefixes to skip validation.
+        - csrf_cookie_secure (optional): set Secure flag on cookie (default: True).
+
+    Raises:
+        TypeError: If no secret key can be resolved.
+
+    Notes:
+        - CSRF tokens are validated on POST, PUT, DELETE, PATCH requests.
+        - Tokens can be submitted via form field 'csrf_token' or header 'X-CSRF-Token'.
+        - The token is available in request.state.csrf_token for templates.
+    """
+    app: Z8ter = context["app"]
+    state = app.starlette_app.state
+    if getattr(state, "_z8_csrf_added", False):
+        return
+
+    secret_key = get_config_value(context=context, key="APP_SESSION_KEY")
+    secret_key = context.get("secret_key") or secret_key
+    if not secret_key:
+        raise TypeError("Z8ter: secret key is required for CSRF protection.")
+
+    exempt_paths = context.get("csrf_exempt_paths", [])
+    cookie_secure = context.get("csrf_cookie_secure", True)
+
+    app.starlette_app.add_middleware(
+        CSRFMiddleware,
+        secret_key=secret_key,
+        exempt_paths=exempt_paths,
+        cookie_secure=cookie_secure,
+    )
+    state._z8_csrf_added = True
+
+
+def use_rate_limiting_builder(context: dict[str, Any]) -> None:
+    """Enable rate limiting middleware.
+
+    Context inputs:
+        - rate_limit_requests (optional): requests per minute (default: 60).
+        - rate_limit_burst (optional): burst allowance (default: 10).
+        - rate_limit_exempt_paths (optional): list of path prefixes to skip.
+        - rate_limit_rules (optional): list of RateLimitConfig for path-specific limits.
+
+    Notes:
+        - Rate limiting is per-IP address.
+        - For production, consider Redis-based rate limiting for distributed systems.
+    """
+    app: Z8ter = context["app"]
+    state = app.starlette_app.state
+    if getattr(state, "_z8_rate_limit_added", False):
+        return
+
+    requests_per_minute = context.get("rate_limit_requests", 60)
+    burst_size = context.get("rate_limit_burst", 10)
+    exempt_paths = context.get("rate_limit_exempt_paths", [])
+    rules = context.get("rate_limit_rules", [])
+
+    app.starlette_app.add_middleware(
+        RateLimitMiddleware,
+        requests_per_minute=requests_per_minute,
+        burst_size=burst_size,
+        exempt_paths=exempt_paths,
+        rules=rules,
+    )
+    state._z8_rate_limit_added = True
+
+
+def use_security_headers_builder(context: dict[str, Any]) -> None:
+    """Enable security headers middleware.
+
+    Context inputs:
+        - security_enable_hsts (optional): enable HSTS header (default: False).
+        - security_hsts_max_age (optional): HSTS max-age in seconds.
+        - security_csp (optional): Content-Security-Policy string.
+        - security_x_frame_options (optional): X-Frame-Options value (default: "DENY").
+        - security_referrer_policy (optional): Referrer-Policy value.
+        - security_permissions_policy (optional): Permissions-Policy value.
+
+    Notes:
+        - HSTS should only be enabled in production with proper HTTPS.
+        - CSP requires careful tuning to avoid breaking functionality.
+    """
+    app: Z8ter = context["app"]
+    state = app.starlette_app.state
+    if getattr(state, "_z8_security_headers_added", False):
+        return
+
+    enable_hsts = context.get("security_enable_hsts", False)
+    hsts_max_age = context.get("security_hsts_max_age", 31536000)
+    csp = context.get("security_csp")
+    x_frame_options = context.get("security_x_frame_options", "DENY")
+    referrer_policy = context.get(
+        "security_referrer_policy", "strict-origin-when-cross-origin"
+    )
+    permissions_policy = context.get("security_permissions_policy")
+
+    app.starlette_app.add_middleware(
+        SecurityHeadersMiddleware,
+        enable_hsts=enable_hsts,
+        hsts_max_age=hsts_max_age,
+        content_security_policy=csp,
+        x_frame_options=x_frame_options,
+        referrer_policy=referrer_policy,
+        permissions_policy=permissions_policy,
+    )
+    state._z8_security_headers_added = True

@@ -35,25 +35,30 @@ def render(template_name: str, context: dict[str, Any] | None = None) -> Respons
 
     Args:
         template_name: Path to the Jinja template, relative to templates dir.
-        context: Template context variables. May be None.
+        context: Template context variables. Must include 'request' key.
 
     Returns:
         Response: A Starlette TemplateResponse object.
 
     Notes:
-        - Unlike Starlette, this wrapper does not automatically inject `request`
-          into the context. You may want to add it in higher-level view helpers.
+        - The context MUST contain a 'request' key with the current Request object.
         - Response type is framework-specific but generally behaves like ASGI.
 
     """
     templates: Jinja2Templates = z8ter.get_templates()
-    return templates.TemplateResponse(template_name, context)
+    ctx = context or {}
+    request = ctx.get("request")
+    if request is not None:
+        # Use new Starlette API: TemplateResponse(request, name, context)
+        return templates.TemplateResponse(request, template_name, ctx)
+    # Fallback for tests without request (will trigger deprecation warning)
+    return templates.TemplateResponse(template_name, ctx)
 
 
 def load_props(page_id: str, base: Path | None = None) -> dict[str, Any]:
     """Load page props for a given page id from content files.
 
-    - Supports .json, .yaml, .yml (last match wins).
+    - Supports .json, .yaml, .yml (first match wins).
     - `page_id` may use dots or slashes: "app.home" -> "app/home".
 
     Args:
@@ -76,16 +81,28 @@ def load_props(page_id: str, base: Path | None = None) -> dict[str, Any]:
         root / f"{rel}.yml",
     ]
 
-    data = None
-    for path in candidates:
-        if path.is_file():
-            text = path.read_text(encoding="utf-8")
-            if path.suffix == ".json":
-                data = json.loads(text)
-            else:
-                data = yaml.safe_load(text)
+    # Find existing content files
+    found_files = [path for path in candidates if path.is_file()]
 
-    if data is None:
-        data = {}
-        logger.warning(f"No content found for '{page_id}' under {root})")
-    return {"page_content": dict(data)}
+    if not found_files:
+        logger.warning("No content found for '%s' under %s", page_id, root)
+        return {"page_content": {}}
+
+    # Warn if multiple content files exist
+    if len(found_files) > 1:
+        logger.warning(
+            "Multiple content files found for '%s': %s. Using first match: %s",
+            page_id,
+            [str(f) for f in found_files],
+            found_files[0],
+        )
+
+    # Use first match
+    path = found_files[0]
+    text = path.read_text(encoding="utf-8")
+    if path.suffix == ".json":
+        data = json.loads(text)
+    else:
+        data = yaml.safe_load(text)
+
+    return {"page_content": dict(data) if data else {}}

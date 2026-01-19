@@ -20,15 +20,16 @@ Assumptions:
 Security notes:
 - Always use a safe HTTP status for redirects (303 = "See Other") so POST
   requests don't accidentally get replayed.
-- Be cautious with `next` query parameters: validate/whitelist paths to avoid
+- The `next` query parameter is validated using `is_safe_redirect_url` to prevent
   open redirect vulnerabilities.
 """
 
 from functools import wraps
-from urllib.parse import quote
+from urllib.parse import quote, unquote
 
 from z8ter.requests import Request
 from z8ter.responses import RedirectResponse
+from z8ter.security.redirect import get_safe_redirect_url, is_safe_redirect_url
 
 
 def login_required(handler):
@@ -46,6 +47,9 @@ def login_required(handler):
         - RedirectResponse to login if unauthenticated.
         - Otherwise, forwards call to the wrapped handler.
 
+    Security:
+        - The `next` parameter is validated to prevent open redirect attacks.
+        - Only relative URLs are accepted; absolute URLs are rejected.
     """
 
     @wraps(handler)
@@ -58,12 +62,40 @@ def login_required(handler):
             next_url = request.url.path
             if request.url.query:
                 next_url = f"{next_url}?{request.url.query}"
-            redirect_url = f"{login_path}?next={quote(next_url, safe='')}"
+            # Only preserve the next URL if it's safe (relative path)
+            if is_safe_redirect_url(next_url):
+                redirect_url = f"{login_path}?next={quote(next_url, safe='')}"
+            else:
+                redirect_url = login_path
             return RedirectResponse(redirect_url, status_code=303)
 
         return await handler(self, request, *args, **kwargs)
 
     return wrapper
+
+
+def get_post_login_redirect(request: Request, fallback: str = "/") -> str:
+    """Get the safe redirect URL for post-login redirection.
+
+    Extracts the `next` query parameter and validates it to prevent
+    open redirect vulnerabilities.
+
+    Args:
+        request: The current request object
+        fallback: URL to redirect to if `next` is missing or invalid
+
+    Returns:
+        Safe redirect URL (either validated `next` or fallback)
+
+    Usage:
+        redirect_url = get_post_login_redirect(request, fallback="/app")
+        return RedirectResponse(redirect_url, status_code=303)
+    """
+    next_url = request.query_params.get("next")
+    if next_url:
+        # URL-decode the next parameter
+        next_url = unquote(next_url)
+    return get_safe_redirect_url(next_url, fallback=fallback)
 
 
 def skip_if_authenticated(handler):

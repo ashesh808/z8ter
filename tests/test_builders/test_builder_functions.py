@@ -3,18 +3,20 @@ from __future__ import annotations
 import pytest
 from starlette.applications import Starlette
 from starlette.exceptions import HTTPException
+from starlette.responses import JSONResponse
+from starlette.routing import Route
 
 from z8ter.builders import builder_functions as bf
 from z8ter.core import Z8ter
 
 
+async def _ping(request):
+    return JSONResponse({"ok": True})
+
+
 def _make_context() -> dict:
-    starlette_app = Starlette()
-
-    @starlette_app.route("/ping")
-    async def ping(request):
-        return {"ok": True}
-
+    routes = [Route("/ping", _ping, name="ping")]
+    starlette_app = Starlette(routes=routes)
     app = Z8ter(debug=False, starlette_app=starlette_app)
     return {"app": app, "services": {}}
 
@@ -111,8 +113,11 @@ def test_publish_auth_repos_builder_registers_services() -> None:
 
 
 def test_use_app_sessions_builder_configures_session_middleware() -> None:
+    # Secret key must be at least 32 characters
+    valid_key = "a" * 32
+
     ctx = _make_context()
-    ctx["config"] = lambda key: {"APP_SESSION_KEY": "env-key"}.get(key)
+    ctx["config"] = lambda key: {"APP_SESSION_KEY": valid_key}.get(key)
     bf.use_app_sessions_builder(ctx)
 
     middleware_classes = [
@@ -121,16 +126,23 @@ def test_use_app_sessions_builder_configures_session_middleware() -> None:
     assert "SessionMiddleware" in middleware_classes
 
     ctx = _make_context()
-    ctx["secret_key"] = "explicit"
+    ctx["secret_key"] = valid_key
     bf.use_app_sessions_builder(ctx)
     middleware_classes = [
         m.cls.__name__ for m in ctx["app"].starlette_app.user_middleware
     ]
     assert "SessionMiddleware" in middleware_classes
 
+    # Test missing key raises TypeError
     ctx = _make_context()
     ctx["config"] = lambda key, default=None: None
     with pytest.raises(TypeError):
+        bf.use_app_sessions_builder(ctx)
+
+    # Test short key raises ValueError
+    ctx = _make_context()
+    ctx["secret_key"] = "too-short"
+    with pytest.raises(ValueError):
         bf.use_app_sessions_builder(ctx)
 
 

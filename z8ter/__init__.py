@@ -20,10 +20,17 @@ Conventions:
 
 from __future__ import annotations
 
+# --- enable pkgutil-style namespace so plugins can add subpackages ---
+from pkgutil import extend_path  # noqa: E402
+
+__path__ = extend_path(__path__, __name__)  # noqa: E402
+# --------------------------------------------------------------------
+
 __version__ = "0.2.6"
 
 import contextvars
 import os
+import threading
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
@@ -36,6 +43,10 @@ from starlette.templating import Jinja2Templates
 _APP_DIR: contextvars.ContextVar[Path | None] = contextvars.ContextVar(
     "Z8TER_APP_DIR_EXPLICIT", default=None
 )
+
+# Thread-safe lock for cache operations (RLock allows reentrant acquisition
+# since get_templates() calls _current_paths() while holding the lock)
+_cache_lock = threading.RLock()
 
 
 def set_app_dir(path: str | Path) -> None:
@@ -105,19 +116,35 @@ _paths_cache: Paths | None = None
 
 
 def _current_paths() -> Paths:
-    """Return cached paths for the current app dir; recompute on base change."""
+    """Return cached paths for the current app dir; recompute on base change.
+
+    Thread-safe: uses a lock to prevent race conditions during cache updates.
+    """
     global _paths_cache
     base = get_app_dir()
-    if _paths_cache is None or _paths_cache.base != base:
-        _paths_cache = _resolve_paths(base)
-    return _paths_cache
+
+    # Fast path: check cache without lock
+    cached = _paths_cache
+    if cached is not None and cached.base == base:
+        return cached
+
+    # Slow path: acquire lock and update cache
+    with _cache_lock:
+        # Double-check after acquiring lock
+        if _paths_cache is None or _paths_cache.base != base:
+            _paths_cache = _resolve_paths(base)
+        return _paths_cache
 
 
 def _clear_cache() -> None:
-    """Clear cached paths and template environment (called on base change)."""
+    """Clear cached paths and template environment (called on base change).
+
+    Thread-safe: uses a lock to prevent race conditions.
+    """
     global _paths_cache, _templates_cache
-    _paths_cache = None
-    _templates_cache = None
+    with _cache_lock:
+        _paths_cache = None
+        _templates_cache = None
 
 
 # -------- Lazy module attributes (PEP 562) --------
@@ -131,15 +158,31 @@ def get_templates() -> Jinja2Templates:
     The cache is invalidated automatically when `set_app_dir(...)` updates the
     base directory.
 
+    Thread-safe: uses a lock to prevent race conditions during cache updates.
+
     Returns:
         A `Jinja2Templates` instance rooted at the resolved templates folder.
 
     """
     global _templates_cache
-    if _templates_cache is None:
-        tdir = _current_paths().templates
-        _templates_cache = Jinja2Templates(directory=str(tdir))
-    return _templates_cache
+
+    # Fast path: check cache without lock
+    if _templates_cache is not None:
+        return _templates_cache
+
+    # Slow path: acquire lock and create templates
+    with _cache_lock:
+        # Double-check after acquiring lock
+        if _templates_cache is None:
+            tdir = _current_paths().templates
+            _templates_cache = Jinja2Templates(directory=str(tdir))
+        return _templates_cache
+
+
+# Pre-defined attribute names for lazy access (avoids dict creation on each call)
+_PATH_ATTRS = frozenset(
+    {"BASE_DIR", "VIEWS_DIR", "TEMPLATES_DIR", "STATIC_PATH", "API_DIR", "TS_DIR"}
+)
 
 
 def __getattr__(name: str) -> Any:
@@ -153,20 +196,32 @@ def __getattr__(name: str) -> Any:
     Raises:
         AttributeError: If the attribute is not recognized.
 
+    Performance:
+        Uses a pre-defined set for attribute lookup instead of creating a dict
+        on every access.
+
     """
-    paths = _current_paths()
-    mapping: dict[str, Path] = {
-        "BASE_DIR": paths.base,
-        "VIEWS_DIR": paths.views,
-        "TEMPLATES_DIR": paths.templates,
-        "STATIC_PATH": paths.static,
-        "API_DIR": paths.api,
-        "TS_DIR": paths.ts,
-    }
-    if name in mapping:
-        return mapping[name]
     if name == "templates":
         return get_templates()
+
+    if name not in _PATH_ATTRS:
+        raise AttributeError(f"module 'z8ter' has no attribute {name!r}")
+
+    # Only compute paths when actually needed
+    paths = _current_paths()
+    if name == "BASE_DIR":
+        return paths.base
+    if name == "VIEWS_DIR":
+        return paths.views
+    if name == "TEMPLATES_DIR":
+        return paths.templates
+    if name == "STATIC_PATH":
+        return paths.static
+    if name == "API_DIR":
+        return paths.api
+    if name == "TS_DIR":
+        return paths.ts
+
     raise AttributeError(f"module 'z8ter' has no attribute {name!r}")
 
 

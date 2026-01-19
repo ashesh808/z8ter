@@ -27,17 +27,26 @@ Security notes:
 Performance:
 - Every request with a cookie performs two lookups (session + user).
 - Apps may introduce caching layers if performance becomes a bottleneck.
+- Repository calls are run in a thread pool to avoid blocking the event loop.
 
 Future extensions:
 - Support header-based tokens (e.g., for API clients).
 - Handle session rotation transparently.
 """
 
+import asyncio
+import logging
+from concurrent.futures import ThreadPoolExecutor
 from typing import Any
 
 from starlette.middleware.base import BaseHTTPMiddleware
 
 from z8ter.auth.contracts import SessionRepo, UserRepo
+
+logger = logging.getLogger("z8ter.auth")
+
+# Thread pool for blocking repository operations
+_executor = ThreadPoolExecutor(max_workers=4, thread_name_prefix="z8ter_auth_")
 
 
 class AuthSessionMiddleware(BaseHTTPMiddleware):
@@ -79,6 +88,7 @@ class AuthSessionMiddleware(BaseHTTPMiddleware):
         - If a valid session is found, `request.state.user` will be populated
           with the user object (dict-like) returned by `UserRepo.get_user_by_id`.
         - Invalid, expired, or missing sessions are treated as anonymous.
+        - Repository errors are logged and treated as authentication failure.
         - Always calls `call_next(request)` to continue processing.
 
         Security:
@@ -89,10 +99,34 @@ class AuthSessionMiddleware(BaseHTTPMiddleware):
         """
         request.state.user = None
         sid = request.cookies.get("z8_auth_sid")
-        session_repo: SessionRepo = request.app.state.session_repo
-        user_repo: UserRepo = request.app.state.user_repo
+
         if sid:
-            user_id = session_repo.get_user_id(sid)
-            if user_id:
-                request.state.user = user_repo.get_user_by_id(user_id)
+            try:
+                session_repo: SessionRepo = request.app.state.session_repo
+                user_repo: UserRepo = request.app.state.user_repo
+
+                # Run sync repository calls in thread pool to avoid blocking
+                loop = asyncio.get_running_loop()
+                user_id = await loop.run_in_executor(
+                    _executor,
+                    session_repo.get_user_id,
+                    sid,
+                )
+
+                if user_id:
+                    user = await loop.run_in_executor(
+                        _executor,
+                        user_repo.get_user_by_id,
+                        user_id,
+                    )
+                    request.state.user = user
+
+            except Exception as exc:
+                # Log the error but treat as unauthenticated
+                # This prevents repository failures from crashing requests
+                logger.warning(
+                    "Authentication lookup failed: %s. Treating as anonymous.",
+                    str(exc),
+                )
+
         return await call_next(request)

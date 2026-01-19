@@ -4,6 +4,7 @@ import asyncio
 
 import pytest
 from starlette.applications import Starlette
+from starlette.routing import Route
 
 from z8ter.core import Z8ter
 from z8ter.responses import JSONResponse
@@ -24,13 +25,13 @@ def test_z8ter_invalid_mode_raises() -> None:
         Z8ter(mode="invalid", starlette_app=starlette_app)
 
 
+async def _ping(request):
+    return JSONResponse({"ok": True})
+
+
 def test_z8ter_forwards_asgi_calls() -> None:
-    starlette_app = Starlette()
-
-    @starlette_app.route("/ping")
-    async def ping(request):
-        return JSONResponse({"ok": True})
-
+    routes = [Route("/ping", _ping)]
+    starlette_app = Starlette(routes=routes)
     app = Z8ter(starlette_app=starlette_app, debug=False)
 
     scope = {

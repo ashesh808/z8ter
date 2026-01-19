@@ -1,1 +1,0 @@
-{"version":3,"file":"dashboard-B0e-XXYs.js","sources":["../../../src/ts/pages/app/dashboard.ts"],"sourcesContent":["export default function initDashboard(): void {}"],"names":["initDashboard"],"mappings":"AAAA,SAAwBA,GAAsB,CAAC"}

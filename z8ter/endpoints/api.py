@@ -18,12 +18,18 @@ Discovery & mounting:
 
 Contract:
 - Decorate instance methods with `@API.endpoint(method, path)`.
-- Methods are invoked on a fresh instance created by `build_mount()`.
+- Methods are invoked on a shared instance created by `build_mount()`.
+
+Important limitations:
+- A single instance is shared across all routes. Do NOT store request-specific
+  state on `self` as it will leak between requests. Use `request.state` instead.
+- For per-request isolation, create dependencies via constructor arguments rather
+  than storing state on the instance.
 
 Caveats:
 - `build_mount()` adds a leading slash to the mount prefix if missing.
-- A historical quirk trims a leading `"endpoints"` segment from the derived id.
-  See the inline note; keep in sync with your route builder.
+- Legacy: A leading `"endpoints"` segment is trimmed from the derived id for
+  backwards compatibility. New projects should place APIs under `api/` directly.
 """
 
 from __future__ import annotations
@@ -45,9 +51,10 @@ class API:
         _api_id: Derived from the module path (e.g., "billing/invoices").
         _endpoints: Collected list of (method, subpath, func_name) tuples.
 
-    Notes:
-        - Endpoint methods are instance methods; `build_mount()` constructs one
-          instance and wires the bound methods into Starlette `Route`s.
+    Important:
+        All routes share a single instance of the API class. Do NOT store
+        request-specific state on `self` - it will leak between requests.
+        Use `request.state` for per-request data instead.
 
     """
 
@@ -84,7 +91,7 @@ class API:
         """Create a Starlette `Mount` containing all registered routes.
 
         The mount prefix is the derived `_api_id`, with a defensive leading `/`
-        added if missing. A legacy quirk trims a leading `"endpoints"` segment.
+        added if missing.
 
         Returns:
             starlette.routing.Mount: mount wrapping each declared endpoint.
@@ -93,12 +100,21 @@ class API:
             - Higher-level builders often mount this under a shared prefix
               (e.g., `/api`). Avoid hardcoding `/api` here to keep layering
               clean and let builders decide composition.
+            - All routes share a single instance. Do not store request state on self.
+
+        Legacy behavior:
+            A leading "endpoints" segment is trimmed from the prefix for backwards
+            compatibility with older project structures. New projects should place
+            API modules directly under `api/`.
 
         """
+        # Legacy: trim "endpoints" prefix for backwards compatibility
         prefix: str = f"{cls._api_id}".removeprefix("endpoints")
         if not prefix.startswith("/"):
             prefix = f"/{prefix}"
 
+        # Create a single instance shared across all routes
+        # WARNING: Do not store request-specific state on self
         inst: API = cls()
         routes: list[Route] = [
             Route(subpath, endpoint=getattr(inst, func_name), methods=[method])

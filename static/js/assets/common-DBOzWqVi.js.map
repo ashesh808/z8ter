@@ -1,1 +1,0 @@
-{"version":3,"file":"common-DBOzWqVi.js","sources":["../../../src/ts/pages/common.ts"],"sourcesContent":["export default function initCommon(): void {\n    console.log(\"Hello from common!\")\n}"],"names":["initCommon"],"mappings":"AAAA,SAAwBA,GAAmB,CACvC,QAAQ,IAAI,oBAAoB,CACpC"}
