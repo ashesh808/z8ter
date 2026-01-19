@@ -42,6 +42,7 @@ from z8ter.builders.builder_functions import (
     use_config_builder,
     use_csrf_builder,
     use_errors_builder,
+    use_health_check_builder,
     use_rate_limiting_builder,
     use_security_headers_builder,
     use_service_builder,
@@ -340,6 +341,36 @@ class AppBuilder:
                     "security_x_frame_options": x_frame_options,
                     "security_referrer_policy": referrer_policy,
                     "security_permissions_policy": permissions_policy,
+                },
+            )
+        )
+
+    def use_health_check(
+        self,
+        *,
+        path: str = "/health",
+        include_details: bool = False,
+    ) -> None:
+        """Add a health check endpoint.
+
+        Args:
+            path: URL path for health endpoint (default: "/health").
+            include_details: Include service status details in response.
+
+        Notes:
+            - Returns JSON: {"status": "healthy", "version": "..."}
+            - Useful for container orchestration (Docker, Kubernetes).
+            - Should be exempt from rate limiting.
+        """
+        self.builder_queue.append(
+            BuilderStep(
+                name="health_check",
+                func=use_health_check_builder,
+                requires=[],
+                idempotent=True,
+                kwargs={
+                    "health_check_path": path,
+                    "health_check_include_details": include_details,
                 },
             )
         )
