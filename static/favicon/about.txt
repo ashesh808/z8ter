@@ -1,6 +1,0 @@
-This favicon was generated using the following font:
-
-- Font Title: Lobster
-- Font Author: undefined
-- Font Source: https://fonts.gstatic.com/s/lobster/v31/neILzCirqoswsqX9_oWsMqEzSJQ.ttf
-- Font License: undefined)

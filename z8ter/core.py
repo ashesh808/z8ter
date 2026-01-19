@@ -24,8 +24,8 @@ class Z8ter:
     Args:
         debug: Optional explicit debug flag. If None, defaults to True
             when mode="dev".
-        mode: Application mode string (e.g., "dev", "prod"). Defaults
-            to "prod" if not set.
+        mode: Application mode string (e.g., "dev", "prod", "test"). Defaults
+            to "prod" if not set. Used to configure mode-specific behavior.
         starlette_app: The underlying Starlette ASGI application.
 
     Attributes:
@@ -33,6 +33,9 @@ class Z8ter:
         state: Shortcut to `starlette_app.state`.
         mode: Lowercased mode string (default "prod").
         debug: Boolean indicating whether debug mode is active.
+        is_dev: Convenience property, True when mode == "dev".
+        is_prod: Convenience property, True when mode == "prod".
+        is_test: Convenience property, True when mode == "test".
 
     Notes:
         - In debug mode, a warning banner is logged at startup.
@@ -60,12 +63,27 @@ class Z8ter:
         else:
             self.debug = bool(debug)
         if self.debug:
-            logger.warning("🧪 Z8ter running in DEBUG mode")
+            logger.warning("[Z8ter] Running in DEBUG mode - do not use in production")
 
     @property
     def state(self):
-        """Forward ASGI calls directly to the underlying Starlette app."""
+        """Access the underlying Starlette app state."""
         return self.starlette_app.state
+
+    @property
+    def is_dev(self) -> bool:
+        """Return True if running in development mode."""
+        return self.mode == "dev"
+
+    @property
+    def is_prod(self) -> bool:
+        """Return True if running in production mode."""
+        return self.mode == "prod"
+
+    @property
+    def is_test(self) -> bool:
+        """Return True if running in test mode."""
+        return self.mode == "test"
 
     async def __call__(self, scope: Scope, receive: Receive, send: Send) -> None:
         """Forward ASGI calls directly to the underlying Starlette app.

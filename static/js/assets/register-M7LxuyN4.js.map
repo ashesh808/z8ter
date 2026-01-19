@@ -1,1 +1,0 @@
-{"version":3,"file":"register-M7LxuyN4.js","sources":["../../../src/ts/pages/register.ts"],"sourcesContent":["export default function initRegister(): void {}"],"names":["initRegister"],"mappings":"AAAA,SAAwBA,GAAqB,CAAC"}

@@ -1,0 +1,5 @@
+Metadata-Version: 2.4
+Name: z8ter-auth
+Version: 0.1.0
+Requires-Dist: starlette>=0.36
+Requires-Dist: argon2-cffi>=23.1.0

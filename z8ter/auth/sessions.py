@@ -15,13 +15,25 @@ Security notes:
   cryptographically secure randomness.
 - SessionRepo implementations must hash `sid` before storing.
 - Cookies are set with `HttpOnly` and `Secure` flags by default.
+
+Threading notes:
+- Repository methods are called synchronously. If your repository implementation
+  performs blocking I/O (e.g., database queries), consider using an async driver
+  or wrapping calls in `run_in_executor`.
+- The in-memory reference implementation is non-blocking and safe for async use.
 """
 
+import asyncio
 import secrets
+from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timedelta, timezone
+from functools import partial
 
 from z8ter.auth.contracts import SessionRepo
 from z8ter.responses import Response
+
+# Thread pool for blocking repository operations
+_executor = ThreadPoolExecutor(max_workers=4, thread_name_prefix="z8ter_session_")
 
 
 class SessionManager:
@@ -69,18 +81,26 @@ class SessionManager:
             - The returned `sid` should be attached to a cookie with
               `set_session_cookie`.
             - The session is persisted immediately via `SessionRepo`.
+            - If the repository performs blocking I/O, the call is run in a
+              thread pool to avoid blocking the event loop.
 
         """
         sid = secrets.token_urlsafe(32)
         expires_at = datetime.now(timezone.utc) + timedelta(seconds=ttl)
 
-        self.session_repo.insert(
-            sid_plain=sid,
-            user_id=user_id,
-            expires_at=expires_at,
-            remember=remember,
-            ip=ip,
-            user_agent=user_agent,
+        # Run sync repository method in executor to avoid blocking event loop
+        loop = asyncio.get_running_loop()
+        await loop.run_in_executor(
+            _executor,
+            partial(
+                self.session_repo.insert,
+                sid_plain=sid,
+                user_id=user_id,
+                expires_at=expires_at,
+                remember=remember,
+                ip=ip,
+                user_agent=user_agent,
+            ),
         )
         return sid
 
@@ -96,9 +116,15 @@ class SessionManager:
         Notes:
             - Idempotent: calling on a non-existent or already revoked session
               returns False.
+            - If the repository performs blocking I/O, the call is run in a
+              thread pool to avoid blocking the event loop.
 
         """
-        return self.session_repo.revoke(sid_plain=sid)
+        loop = asyncio.get_running_loop()
+        return await loop.run_in_executor(
+            _executor,
+            partial(self.session_repo.revoke, sid_plain=sid),
+        )
 
     async def set_session_cookie(
         self,

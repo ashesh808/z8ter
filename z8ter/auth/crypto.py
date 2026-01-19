@@ -24,6 +24,7 @@ Security notes:
 """
 
 from argon2 import PasswordHasher
+from argon2.exceptions import InvalidHashError, VerifyMismatchError
 from argon2.low_level import Type
 
 _PH = PasswordHasher(
@@ -64,17 +65,21 @@ def verify_password(hash_: str, plain: str) -> bool:
     Returns:
         True if verification succeeds, False otherwise.
 
-    Pitfalls:
-        - On failure, always returns False; does not raise unless argon2 itself
-          misbehaves. This prevents leaking reason-specific errors to callers.
+    Notes:
+        - On expected failures (wrong password or malformed hash), returns False.
         - Verification is constant-time within Argon2 implementation, mitigating
           timing attacks.
+        - Unexpected errors (e.g., MemoryError) are re-raised.
 
     """
     try:
         _PH.verify(hash_, plain)
         return True
-    except Exception:
+    except VerifyMismatchError:
+        # Password doesn't match - expected case
+        return False
+    except InvalidHashError:
+        # Hash is malformed - treat as verification failure
         return False
 
 

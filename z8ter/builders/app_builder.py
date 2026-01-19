@@ -23,10 +23,14 @@ Notes:
 from __future__ import annotations
 
 import asyncio
+import logging
+import os
 from collections import deque
 from collections.abc import Callable
 from contextlib import asynccontextmanager
-from typing import Any
+from typing import Any, Sequence
+
+logger = logging.getLogger("z8ter")
 
 from starlette.applications import Starlette
 from starlette.routing import Mount, Route
@@ -36,7 +40,10 @@ from z8ter.builders.builder_functions import (
     use_app_sessions_builder,
     use_authentication_builder,
     use_config_builder,
+    use_csrf_builder,
     use_errors_builder,
+    use_rate_limiting_builder,
+    use_security_headers_builder,
     use_service_builder,
     use_templating_builder,
     use_vite_builder,
@@ -229,11 +236,120 @@ class AppBuilder:
             )
         )
 
-    def build(self, debug: bool = True) -> Z8ter:
+    def use_csrf(
+        self,
+        *,
+        secret_key: str | None = None,
+        exempt_paths: Sequence[str] | None = None,
+        cookie_secure: bool = True,
+    ) -> None:
+        """Enable CSRF protection middleware.
+
+        Args:
+            secret_key: Secret key for token signing. Defaults to APP_SESSION_KEY.
+            exempt_paths: List of path prefixes to skip CSRF validation (e.g., ["/api/"]).
+            cookie_secure: Set Secure flag on CSRF cookie (default: True).
+
+        Notes:
+            - CSRF tokens are validated on POST, PUT, DELETE, PATCH requests.
+            - Token is available via request.state.csrf_token for templates.
+        """
+        self.builder_queue.append(
+            BuilderStep(
+                name="csrf",
+                func=use_csrf_builder,
+                requires=["config"],
+                idempotent=True,
+                kwargs={
+                    "secret_key": secret_key,
+                    "csrf_exempt_paths": list(exempt_paths or []),
+                    "csrf_cookie_secure": cookie_secure,
+                },
+            )
+        )
+
+    def use_rate_limiting(
+        self,
+        *,
+        requests_per_minute: int = 60,
+        burst_size: int = 10,
+        exempt_paths: Sequence[str] | None = None,
+        rules: Sequence | None = None,
+    ) -> None:
+        """Enable rate limiting middleware.
+
+        Args:
+            requests_per_minute: Global rate limit (default: 60).
+            burst_size: Additional burst allowance (default: 10).
+            exempt_paths: List of path prefixes to skip rate limiting.
+            rules: List of RateLimitConfig for path-specific limits.
+
+        Notes:
+            - Rate limiting is per-IP address.
+            - For distributed systems, consider Redis-based rate limiting.
+        """
+        self.builder_queue.append(
+            BuilderStep(
+                name="rate_limiting",
+                func=use_rate_limiting_builder,
+                requires=[],
+                idempotent=True,
+                kwargs={
+                    "rate_limit_requests": requests_per_minute,
+                    "rate_limit_burst": burst_size,
+                    "rate_limit_exempt_paths": list(exempt_paths or []),
+                    "rate_limit_rules": list(rules or []),
+                },
+            )
+        )
+
+    def use_security_headers(
+        self,
+        *,
+        enable_hsts: bool = False,
+        hsts_max_age: int = 31536000,
+        content_security_policy: str | None = None,
+        x_frame_options: str = "DENY",
+        referrer_policy: str = "strict-origin-when-cross-origin",
+        permissions_policy: str | None = None,
+    ) -> None:
+        """Enable security headers middleware.
+
+        Args:
+            enable_hsts: Enable Strict-Transport-Security header (default: False).
+            hsts_max_age: HSTS max-age in seconds (default: 1 year).
+            content_security_policy: Custom CSP policy string.
+            x_frame_options: X-Frame-Options value (default: "DENY").
+            referrer_policy: Referrer-Policy value.
+            permissions_policy: Permissions-Policy value.
+
+        Notes:
+            - HSTS should only be enabled in production with HTTPS.
+            - CSP requires careful tuning to avoid breaking functionality.
+        """
+        self.builder_queue.append(
+            BuilderStep(
+                name="security_headers",
+                func=use_security_headers_builder,
+                requires=[],
+                idempotent=True,
+                kwargs={
+                    "security_enable_hsts": enable_hsts,
+                    "security_hsts_max_age": hsts_max_age,
+                    "security_csp": content_security_policy,
+                    "security_x_frame_options": x_frame_options,
+                    "security_referrer_policy": referrer_policy,
+                    "security_permissions_policy": permissions_policy,
+                },
+            )
+        )
+
+    def build(self, debug: bool | None = None) -> Z8ter:
         """Construct the Starlette app and apply all queued builder steps.
 
         Args:
-            debug: Enable Starlette/Z8ter debug behavior.
+            debug: Enable Starlette/Z8ter debug behavior. If None, defaults to
+                False unless Z8TER_DEBUG environment variable is set to "true".
 
         Returns:
             Z8ter: A configured Z8ter application ready to run.
@@ -243,15 +359,21 @@ class AppBuilder:
                 if required steps are missing when a step executes.
 
         """
+        # Resolve debug mode: explicit > env var > False
+        if debug is None:
+            debug = os.getenv("Z8TER_DEBUG", "false").lower() == "true"
 
         @asynccontextmanager
         async def lifespan(app):
+            logger.info("Z8ter application starting up")
             try:
                 yield
-            except (asyncio.CancelledError, KeyboardInterrupt):
-                pass
+            except asyncio.CancelledError:
+                logger.info("Z8ter application cancelled")
+            except KeyboardInterrupt:
+                logger.info("Z8ter application interrupted by user")
             finally:
-                ...
+                logger.info("Z8ter application shutting down")
 
         starlette_app = Starlette(
             debug=debug,
@@ -287,15 +409,29 @@ class AppBuilder:
                 hint = ""
                 if "auth_repos" in missing and step.name == "auth":
                     hint = (
-                        " → Call use_auth_repos(session_repo=..., user_repo=...) "
+                        " -> Call use_auth_repos(session_repo=..., user_repo=...) "
                         "before use_authentication()."
                     )
                 raise RuntimeError(
                     f"Z8ter: step '{step.name}' requires [{need}].{hint}"
                 )
+
+            # Add step-specific kwargs to context, then remove after step executes
+            # This prevents kwargs from leaking between steps while allowing
+            # steps to add new keys to the shared context
+            added_kwargs = []
             if step.kwargs:
-                context.update(step.kwargs)
+                for key, value in step.kwargs.items():
+                    if key not in context:
+                        added_kwargs.append(key)
+                    context[key] = value
+
             step.func(context)
+
+            # Remove step-specific kwargs to prevent leakage
+            for key in added_kwargs:
+                context.pop(key, None)
+
             applied.add(step.name)
 
         if debug:

@@ -126,6 +126,43 @@ class SessionRepo(Protocol):
         """
         ...
 
+    def revoke_all_for_user(self, user_id: str) -> int:
+        """Revoke all active sessions for a given user.
+
+        Used when a user changes their password or explicitly logs out of all
+        sessions. This ensures that compromised sessions are invalidated.
+
+        Args:
+            user_id: The user identifier whose sessions should be revoked.
+
+        Returns:
+            The number of sessions that were revoked.
+
+        Security:
+            - This should be called when a user changes their password.
+            - Consider also calling on account lockout or security incidents.
+            - Implementation should be atomic if possible.
+
+        """
+        ...
+
+    def cleanup_expired(self) -> int:
+        """Remove expired and revoked sessions from storage.
+
+        This is a maintenance method to prevent unbounded storage growth.
+        Should be called periodically (e.g., via a background task or cron).
+
+        Returns:
+            The number of sessions removed.
+
+        Implementation notes:
+            - Safe to call frequently; should be idempotent.
+            - For database-backed stores, consider batch deletion.
+            - In-memory stores should call this to prevent memory leaks.
+
+        """
+        ...
+
 
 class UserRepo(Protocol):
     """Read-only user lookup contract for auth flows.

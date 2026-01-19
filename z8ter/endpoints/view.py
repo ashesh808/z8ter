@@ -56,10 +56,27 @@ class View(HTTPEndpoint):
         receive: Receive | None = None,
         send: Send | None = None,
     ) -> None:
-        """Support manual instantiation in tests.
+        """Initialize the View endpoint.
 
-        Starlette constructs endpoint instances with `(scope, receive, send)`.
-        This initializer calls the parent only when all three are provided.
+        This supports two instantiation patterns:
+
+        1. **Runtime (by Starlette)**: Called with all three ASGI parameters.
+           The parent `HTTPEndpoint.__init__` is invoked to set up the request
+           lifecycle.
+
+        2. **Testing**: Called with no arguments (or None values). The parent
+           constructor is skipped, allowing you to test view methods without
+           a full ASGI context. Example:
+           ```python
+           view = MyView()
+           response = await view.get(mock_request)
+           ```
+
+        Args:
+            scope: ASGI connection scope (provided by Starlette at runtime)
+            receive: ASGI receive callable (provided by Starlette at runtime)
+            send: ASGI send callable (provided by Starlette at runtime)
+
         """
         if scope is not None and receive is not None and send is not None:
             super().__init__(scope, receive, send)
@@ -76,6 +93,7 @@ class View(HTTPEndpoint):
             - `page_id`: Derived from the subclass module path.
             - `request`: The current request object (for Jinja/Starlette usage).
             - `page_content`: YAML loaded via `load_content(page_id)`.
+            - `csrf_token`: CSRF token from request state (if CSRF middleware is enabled).
 
         Args:
             request: Current HTTP request.
@@ -93,6 +111,12 @@ class View(HTTPEndpoint):
         """
         page_id: str = getattr(self.__class__, "_page_id", "")
         ctx: dict[str, Any] = {"page_id": page_id, "request": request}
+
+        # Inject CSRF token if available from middleware
+        csrf_token = getattr(request.state, "csrf_token", None)
+        if csrf_token:
+            ctx["csrf_token"] = csrf_token
+
         if context:
             ctx.update(context)
         ctx.update(load_props(page_id))

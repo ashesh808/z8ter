@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from starlette.applications import Starlette
 from starlette.responses import JSONResponse
+from starlette.routing import Route
 from starlette.testclient import TestClient
 
 from z8ter.auth.middleware import AuthSessionMiddleware
@@ -28,23 +29,24 @@ class _UserRepo:
         return None
 
 
+async def _whoami(request):
+    user = getattr(request.state, "user", None)
+    return JSONResponse({"user": user})
+
+
 def _make_app() -> Starlette:
-    app = Starlette()
+    routes = [Route("/", _whoami)]
+    app = Starlette(routes=routes)
     app.state.session_repo = _SessionRepo()
     app.state.user_repo = _UserRepo()
     app.add_middleware(AuthSessionMiddleware)
-
-    @app.route("/")
-    async def whoami(request):
-        user = getattr(request.state, "user", None)
-        return JSONResponse({"user": user})
-
     return app
 
 
 def test_middleware_sets_user_when_session_cookie_valid() -> None:
     client = TestClient(_make_app())
-    resp = client.get("/", cookies={"z8_auth_sid": "good"})
+    client.cookies.set("z8_auth_sid", "good")
+    resp = client.get("/")
 
     assert resp.status_code == 200
     assert resp.json()["user"] == {"id": "user-123", "email": "user@example.com"}
@@ -60,7 +62,8 @@ def test_middleware_leaves_user_none_when_cookie_missing() -> None:
 
 def test_middleware_handles_unknown_session() -> None:
     client = TestClient(_make_app())
-    resp = client.get("/", cookies={"z8_auth_sid": "nope"})
+    client.cookies.set("z8_auth_sid", "nope")
+    resp = client.get("/")
 
     assert resp.status_code == 200
     assert resp.json()["user"] is None
