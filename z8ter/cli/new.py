@@ -43,6 +43,21 @@ class CopyStats:
     dirs_created: int
 
 
+_SKIP_DIRS: Final[frozenset[str]] = frozenset({"__pycache__"})
+_SKIP_FILES: Final[frozenset[str]] = frozenset({".DS_Store"})
+_SKIP_SUFFIXES: Final[tuple[str, ...]] = (".pyc", ".pyo")
+
+
+def _should_skip_path(path: Path) -> bool:
+    """Return True when a template path should not be copied."""
+    return (
+        (bool(path.parts) and path.parts[0] == "views")
+        or any(part in _SKIP_DIRS for part in path.parts)
+        or path.name in _SKIP_FILES
+        or path.suffix in _SKIP_SUFFIXES
+    )
+
+
 def _iter_dirnames(root: Path) -> Iterable[Path]:
     """Yield all directories under `root`, including `root` itself."""
     for current, _dirnames, _filenames in os.walk(root):
@@ -74,6 +89,8 @@ def _copy_tree(src: Path, dst: Path) -> CopyStats:
     files_copied = 0
 
     for d in _iter_dirnames(src):
+        if _should_skip_path(d.relative_to(src)):
+            continue
         rel = d.relative_to(src)
         target_dir = dst / rel
         if not target_dir.exists():
@@ -85,6 +102,9 @@ def _copy_tree(src: Path, dst: Path) -> CopyStats:
         rel_dir = current_path.relative_to(src)
         for name in filenames:
             s = current_path / name
+            rel_path = s.relative_to(src)
+            if _should_skip_path(rel_path):
+                continue
             d = (dst / rel_dir) / name
             try:
                 if not s.is_file():
@@ -136,6 +156,14 @@ def new_project(project_name: str, path: str | None = None) -> int:
 
     """
     target = Path(path or project_name).resolve()
+    if target.exists() and not target.is_dir():
+        print(
+            f"✖ Target path exists and is not a directory: {target}",
+            file=sys.stderr,
+            flush=True,
+        )
+        return RC_NONEMPTY_DIR
+
     if target.exists() and any(target.iterdir()):
         print(f"✖ Target directory is not empty: {target}", file=sys.stderr, flush=True)
         return RC_NONEMPTY_DIR
@@ -155,6 +183,7 @@ def new_project(project_name: str, path: str | None = None) -> int:
     print(f"✓ Created new Z8ter project at: {target}")
     print("Next steps:")
     print(f"  cd {target}")
-    print("  uv sync && npm install")
+    print("  uv sync")
+    print("  npm install")
     print("  uv run z8 run dev")
     return RC_OK

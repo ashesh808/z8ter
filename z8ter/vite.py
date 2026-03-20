@@ -21,7 +21,7 @@ import os
 import threading
 from pathlib import Path
 
-from markupsafe import Markup
+from markupsafe import Markup, escape
 
 import z8ter
 
@@ -113,11 +113,9 @@ def vite_script_tag(entry: str, *, fallback_to_manifest: bool = True) -> Markup:
     """
     # DEV SERVER MODE -------------------------------------------------
     if VITE_DEV_SERVER:
-        # Log that we're using dev server
         logger.debug("Using Vite dev server for entry: %s", entry)
-        return Markup(
-            f'<script type="module" src="{VITE_DEV_SERVER}/{entry}"></script>'
-        )
+        src = escape(f"{VITE_DEV_SERVER}/{entry}")
+        return Markup(f'<script type="module" src="{src}"></script>')
 
     # BUILD/MANIFEST MODE --------------------------------------------
     try:
@@ -135,18 +133,19 @@ def vite_script_tag(entry: str, *, fallback_to_manifest: bool = True) -> Markup:
         )
 
     item = manifest[entry]
-    tags: list[str] = [
-        f'<script type="module" src="/static/js/{item["file"]}"></script>'
-    ]
+    script_src = escape(f"/static/js/{item['file']}")
+    tags: list[str] = [f'<script type="module" src="{script_src}"></script>']
 
     # Preload JS imports.
     for imp in item.get("imports", []):
         dep = manifest.get(imp)
         if dep and "file" in dep:
-            tags.append(f'<link rel="modulepreload" href="/static/js/{dep["file"]}">')
+            href = escape(f"/static/js/{dep['file']}")
+            tags.append(f'<link rel="modulepreload" href="{href}">')
 
     # Add CSS dependencies.
     for css in item.get("css", []):
-        tags.append(f'<link rel="stylesheet" href="/static/js/{css}">')
+        href = escape(f"/static/js/{css}")
+        tags.append(f'<link rel="stylesheet" href="{href}">')
 
     return Markup("\n".join(tags))

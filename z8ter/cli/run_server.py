@@ -39,7 +39,7 @@ DEFAULT_APP_FACTORY = "main:app_builder.build"
 def run_server(
     mode: str = "prod",
     host: str = "127.0.0.1",
-    port: int = 8080,
+    port: int = 8000,
     reload: bool | None = None,
     app_factory: str | None = None,
 ) -> None:

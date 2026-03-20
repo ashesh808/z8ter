@@ -48,14 +48,22 @@ def test_cli_dispatches_create_api(monkeypatch: pytest.MonkeyPatch) -> None:
 def test_cli_dispatches_new_project(monkeypatch: pytest.MonkeyPatch) -> None:
     captured = {}
 
-    def fake_new(name: str) -> None:
+    def fake_new(name: str) -> int:
         captured["name"] = name
+        return 0
 
     monkeypatch.setattr(cli_main, "new_project", fake_new)
     output = _run(monkeypatch, ["new", "demo"])
 
     assert captured["name"] == "demo"
-    assert "Project created." in output
+    assert "Project created." not in output
+
+
+def test_cli_returns_new_project_error_code(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(cli_main, "new_project", lambda name: 4)
+    output = _run(monkeypatch, ["new", "demo"])
+
+    assert output == ""
 
 
 def test_cli_dispatches_run(monkeypatch: pytest.MonkeyPatch) -> None:

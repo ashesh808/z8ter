@@ -5,5 +5,5 @@ from z8ter.responses import JSONResponse
 
 class [[ class_name ]](API):
     @API.endpoint("GET", "/")
-    async def get_[[ api_name_lower ]](self, request: Request) -> JSONResponse:
+    async def [[ method_name ]](self, request: Request) -> JSONResponse:
         return JSONResponse({"ok": True, "message": "Hello from [[ class_name ]] API!"}, status_code=200)

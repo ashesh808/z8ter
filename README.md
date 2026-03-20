@@ -27,8 +27,8 @@
 ## Quickstart
 
 ```bash
-# Create a new project
-z8 new myapp
+# Scaffold a new app without installing anything globally
+uvx --from z8ter z8 new myapp
 cd myapp
 
 # Initialize database
@@ -46,6 +46,8 @@ uv run z8 run dev
 <summary>Alternative: Using pip instead of uv</summary>
 
 ```bash
+# Install the CLI into the active virtualenv first
+pip install z8ter
 z8 new myapp
 cd myapp
 python3 -m venv .venv
@@ -64,14 +66,17 @@ Visit `http://localhost:8000` to see your app.
 ## Installation
 
 ```bash
-# Using uv (recommended)
+# One-off CLI usage
+uvx --from z8ter z8 --help
+
+# Persistent CLI install
+uv tool install z8ter
+
+# Or inside an existing project environment
 uv add z8ter
 
 # Or using pip
 pip install z8ter
-
-# With authentication support
-pip install z8ter[auth]
 
 # For development
 pip install z8ter[dev]

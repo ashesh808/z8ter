@@ -1,14 +1,14 @@
 [build-system]
-requires = ["setuptools>=68", "wheel", "build"]
+requires = ["setuptools>=68", "wheel"]
 build-backend = "setuptools.build_meta"
 
 [project]
 name = "z8ter"
-version = "0.2.6"
+version = "0.2.7"
 description = "Lightweight full-stack async Python web framework built on Starlette designed for rapid development without compromising in UX"
 readme = "README.md"
 requires-python = ">=3.10"
-license = { file = "LICENSE" }
+license = "MIT"
 authors = [{ name = "Ashesh Nepal", email = "nepalashesh8@gmail.com" }]
 keywords = ["starlette", "asgi", "framework", "uvicorn"]
 classifiers = [
@@ -19,13 +19,13 @@ classifiers = [
   "Programming Language :: Python :: 3.12",
   "Programming Language :: Python :: 3.13",
   "Framework :: AsyncIO",
-  "License :: OSI Approved :: MIT License",
   "Environment :: Console",
   "Intended Audience :: Developers"
 ]
 
 # Core runtime deps
 dependencies = [
+  "argon2-cffi>=25.1,<26",
   "starlette>=0.36,<1.0",
   "jinja2>=3.1,<4",
   "itsdangerous>=2.1,<3",
@@ -37,8 +37,7 @@ dependencies = [
 
 [project.optional-dependencies]
 server = ["uvicorn[standard]>=0.30,<1.0", "rich>=13.7,<14"]
-dev = ["pytest", "pytest-asyncio", "ruff", "mypy", "build", "twine"]
-auth = ["z8ter-auth>=0.1.0"]
+dev = ["pytest", "pytest-asyncio", "ruff", "mypy", "build", "twine", "httpx"]
 
 [project.scripts]
 z8 = "z8ter.cli.main:main"
@@ -67,13 +66,24 @@ z8ter = [
   "scaffold/**/*"
 ]
 
+[tool.setuptools.exclude-package-data]
+z8ter = [
+  "scaffold/**/__pycache__/*",
+  "scaffold/**/*.pyc",
+  "scaffold/**/*.pyo",
+  "scaffold/**/.DS_Store",
+  "scaffold/create_project_template/views/*",
+  "scaffold/create_project_template/views/**/*"
+]
+
 [tool.setuptools]
 include-package-data = true
 
 [tool.setuptools.packages.find]
 where = ["."]
-include = ["z8ter*"]
-exclude = ["z8ter.auth*"]
+include = ["z8ter", "z8ter.*"]
+exclude = ["z8ter.cli.scaffold_dev*", "z8ter.scaffold.create_project_template.views*"]
+namespaces = true
 
 [dependency-groups]
 dev = [

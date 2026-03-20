@@ -14,9 +14,11 @@ Notes:
 
 """
 
+from __future__ import annotations
+
 import logging
-from importlib.resources import as_file
-from importlib.resources import files as resource_files
+
+from importlib.resources import as_file, files
 from pathlib import Path
 
 from jinja2 import (
@@ -31,24 +33,35 @@ import z8ter
 logger = logging.getLogger("z8ter.cli")
 
 
-def _to_pascal_case(name: str) -> str:
-    """Convert a name to PascalCase.
-
-    Examples:
-        "about" -> "About"
-        "user_profile" -> "UserProfile"
-        "my-page" -> "MyPage"
-    """
-    # Split on underscores and hyphens
-    parts = name.replace("-", "_").split("_")
-    return "".join(word.capitalize() for word in parts)
-
-
 def _get_scaffold_path() -> str:
     """Get the path to the scaffold directory within the z8ter package."""
-    scaffold_ref = resource_files("z8ter").joinpath("scaffold")
+    scaffold_ref = files("z8ter").joinpath("scaffold")
     with as_file(scaffold_ref) as scaffold_path:
         return str(scaffold_path)
+
+
+def _normalize_name(name: str) -> tuple[str, list[str]]:
+    """Normalize a scaffold target into POSIX-like path segments."""
+    normalized = name.strip().replace("\\", "/").strip("/")
+    if not normalized:
+        raise ValueError("Scaffold name cannot be empty.")
+
+    parts = [part for part in normalized.split("/") if part]
+    if not parts:
+        raise ValueError("Scaffold name cannot be empty.")
+    return normalized.lower(), [part.lower() for part in parts]
+
+
+def _pascal_case(parts: list[str]) -> str:
+    """Convert path segments into a Python class name."""
+    joined = "_".join(parts)
+    words = [word for word in joined.replace("-", "_").split("_") if word]
+    return "".join(word[:1].upper() + word[1:] for word in words)
+
+
+def _snake_case(parts: list[str]) -> str:
+    """Convert path segments into a Python-safe method suffix."""
+    return "_".join(part.replace("-", "_") for part in parts)
 
 
 env = Environment(
@@ -93,15 +106,20 @@ def create_page(page_name: str, *, force: bool = False) -> None:
         OSError: on filesystem write issues.
 
     """
-    class_name = _to_pascal_case(page_name)
-    page_name_lower = page_name.lower().replace("-", "_")
+    page_name_lower, parts = _normalize_name(page_name)
+    class_name = _pascal_case(parts)
+    relative_path = Path(*parts)
 
-    template_path = z8ter.TEMPLATES_DIR / "pages" / f"{page_name_lower}.jinja"
-    view_path = z8ter.VIEWS_DIR / f"{page_name_lower}.py"
-    ts_path = z8ter.TS_DIR / "pages" / f"{page_name_lower}.ts"
-    content_path = z8ter.BASE_DIR / "content" / f"{page_name_lower}.yaml"
+    template_path = z8ter.TEMPLATES_DIR / "pages" / relative_path.with_suffix(".jinja")
+    view_path = z8ter.VIEWS_DIR / relative_path.with_suffix(".py")
+    ts_path = z8ter.TS_DIR / "pages" / relative_path.with_suffix(".ts")
+    content_path = z8ter.BASE_DIR / "content" / relative_path.with_suffix(".yaml")
 
-    data = {"class_name": class_name, "page_name_lower": page_name_lower}
+    data = {
+        "class_name": class_name,
+        "page_name_lower": page_name_lower,
+        "page_template_path": template_path.relative_to(z8ter.TEMPLATES_DIR).as_posix(),
+    }
 
     file_mappings = [
         ("create_page_templates/view.py.j2", view_path),
@@ -143,11 +161,15 @@ def create_api(api_name: str, *, force: bool = False) -> None:
         OSError: on filesystem write issues.
 
     """
-    api_name_lower = api_name.lower().replace("-", "_")
-    class_name = _to_pascal_case(api_name)
-    data = {"api_name_lower": api_name_lower, "class_name": class_name}
-
-    api_path = z8ter.API_DIR / f"{api_name_lower}.py"
+    api_name_lower, parts = _normalize_name(api_name)
+    class_name = _pascal_case(parts)
+    method_name = f"get_{_snake_case(parts)}"
+    api_path = z8ter.API_DIR / Path(*parts).with_suffix(".py")
+    data = {
+        "api_name_lower": api_name_lower.replace("/", "_"),
+        "class_name": class_name,
+        "method_name": method_name,
+    }
 
     # Check if file exists
     if api_path.exists() and not force:

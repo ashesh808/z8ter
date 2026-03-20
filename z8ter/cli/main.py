@@ -15,6 +15,8 @@ Notes:
 
 """
 
+from __future__ import annotations
+
 import argparse
 from pathlib import Path
 
@@ -80,7 +82,7 @@ def build_parser() -> argparse.ArgumentParser:
     return parser
 
 
-def main() -> None:
+def main() -> int:
     """Entry point for the `z8` CLI."""
     z8ter.set_app_dir(Path.cwd())
     parser = build_parser()
@@ -89,14 +91,16 @@ def main() -> None:
     if args.cmd == "create_page":
         create_page(args.name)
         print("Page created.")
+        return 0
     elif args.cmd == "create_api":
         create_api(args.name)
         print("API created.")
+        return 0
     elif args.cmd == "new":
-        new_project(args.project_name)
-        print("Project created.")
+        return new_project(args.project_name)
     elif args.cmd == "run":
         run_server(mode=args.mode)
+        return 0
     elif args.cmd == "db":
         if args.db_cmd == "init":
             db_init(url=args.url)
@@ -104,9 +108,11 @@ def main() -> None:
             db_reset(url=args.url, force=args.force)
         elif args.db_cmd == "status":
             db_status(url=args.url)
+        return 0
     else:
         parser.print_help()
+        return 1
 
 
 if __name__ == "__main__":
-    main()
+    raise SystemExit(main())

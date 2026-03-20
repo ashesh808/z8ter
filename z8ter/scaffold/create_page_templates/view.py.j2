@@ -6,4 +6,4 @@ from z8ter.responses import Response
 class [[ class_name ]](View):
     async def get(self, request: Request) -> Response:
         # Load your YAML separately and pass as "page_content" in context if desired
-        return self.render(request, "pages/[[ page_name_lower ]].jinja", {})
+        return self.render(request, "[[ page_template_path ]]", {})

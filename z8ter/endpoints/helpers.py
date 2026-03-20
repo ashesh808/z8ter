@@ -35,24 +35,23 @@ def render(template_name: str, context: dict[str, Any] | None = None) -> Respons
 
     Args:
         template_name: Path to the Jinja template, relative to templates dir.
-        context: Template context variables. Must include 'request' key.
+        context: Template context variables. May be None.
 
     Returns:
         Response: A Starlette TemplateResponse object.
 
     Notes:
-        - The context MUST contain a 'request' key with the current Request object.
+        - If `context["request"]` is present, the modern Starlette signature is
+          used to avoid deprecation warnings on recent Starlette versions.
         - Response type is framework-specific but generally behaves like ASGI.
 
     """
     templates: Jinja2Templates = z8ter.get_templates()
-    ctx = context or {}
-    request = ctx.get("request")
+    context = {} if context is None else context
+    request = context.get("request")
     if request is not None:
-        # Use new Starlette API: TemplateResponse(request, name, context)
-        return templates.TemplateResponse(request, template_name, ctx)
-    # Fallback for tests without request (will trigger deprecation warning)
-    return templates.TemplateResponse(template_name, ctx)
+        return templates.TemplateResponse(request, template_name, context)
+    return templates.TemplateResponse(template_name, context)
 
 
 def load_props(page_id: str, base: Path | None = None) -> dict[str, Any]:
