@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "z8ter"
-version = "0.2.7"
+version = "0.3.0"
 description = "Lightweight full-stack async Python web framework built on Starlette designed for rapid development without compromising in UX"
 readme = "README.md"
 requires-python = ">=3.10"
@@ -37,7 +37,7 @@ dependencies = [
 
 [project.optional-dependencies]
 server = ["uvicorn[standard]>=0.30,<1.0", "rich>=13.7,<14"]
-dev = ["pytest", "pytest-asyncio", "ruff", "mypy", "build", "twine", "httpx"]
+dev = ["pytest", "pytest-asyncio", "ruff", "mypy", "build", "twine", "httpx", "pip-audit"]
 
 [project.scripts]
 z8 = "z8ter.cli.main:main"

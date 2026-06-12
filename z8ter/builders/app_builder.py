@@ -26,9 +26,9 @@ import asyncio
 import logging
 import os
 from collections import deque
-from collections.abc import Callable
+from collections.abc import Callable, Sequence
 from contextlib import asynccontextmanager
-from typing import Any, Sequence
+from typing import Any
 
 logger = logging.getLogger("z8ter")
 
@@ -39,8 +39,10 @@ from z8ter.builders.builder_functions import (
     publish_auth_repos_builder,
     use_app_sessions_builder,
     use_authentication_builder,
+    use_background_tasks_builder,
     use_config_builder,
     use_csrf_builder,
+    use_email_builder,
     use_errors_builder,
     use_health_check_builder,
     use_rate_limiting_builder,
@@ -254,6 +256,7 @@ class AppBuilder:
         Notes:
             - CSRF tokens are validated on POST, PUT, DELETE, PATCH requests.
             - Token is available via request.state.csrf_token for templates.
+
         """
         self.builder_queue.append(
             BuilderStep(
@@ -288,6 +291,7 @@ class AppBuilder:
         Notes:
             - Rate limiting is per-IP address.
             - For distributed systems, consider Redis-based rate limiting.
+
         """
         self.builder_queue.append(
             BuilderStep(
@@ -327,6 +331,7 @@ class AppBuilder:
         Notes:
             - HSTS should only be enabled in production with HTTPS.
             - CSP requires careful tuning to avoid breaking functionality.
+
         """
         self.builder_queue.append(
             BuilderStep(
@@ -341,6 +346,75 @@ class AppBuilder:
                     "security_x_frame_options": x_frame_options,
                     "security_referrer_policy": referrer_policy,
                     "security_permissions_policy": permissions_policy,
+                },
+            )
+        )
+
+    def use_email(
+        self,
+        *,
+        provider: object | None = None,
+        default_from: str | None = None,
+    ) -> None:
+        """Enable transactional email (`services["email"]`, `state.email`).
+
+        Args:
+            provider: Explicit `EmailProvider` instance. When omitted, the
+                provider is resolved from config: EMAIL_PROVIDER=console
+                (default) or smtp (using SMTP_* keys).
+            default_from: Default sender address (overrides EMAIL_FROM).
+
+        Notes:
+            - Handlers send via `request.app.state.email`
+              (an `EmailService` with async `send_email`/`send_template`).
+            - The console provider logs messages — ideal for development.
+
+        """
+        self.builder_queue.append(
+            BuilderStep(
+                name="email",
+                func=use_email_builder,
+                requires=["config"],
+                idempotent=True,
+                kwargs={
+                    "email_provider": provider,
+                    "email_default_from": default_from,
+                },
+            )
+        )
+
+    def use_background_tasks(
+        self,
+        *,
+        task_manager: object | None = None,
+        session_cleanup_interval: int | None = 3600,
+    ) -> None:
+        """Enable the in-process background task manager.
+
+        Args:
+            task_manager: Explicit `TaskManager` (e.g., one you registered
+                interval tasks on). A fresh manager is created if omitted.
+            session_cleanup_interval: Seconds between automatic
+                `session_repo.cleanup_expired()` runs (default: 3600).
+                Pass None to disable automatic session cleanup.
+
+        Notes:
+            - The manager is started on app startup and stopped on shutdown
+              via the lifespan; access it at `request.app.state.task_manager`
+              or `services["tasks"]`.
+            - Tasks are in-process asyncio tasks: cheap and simple, but they
+              die with the process. Use a real queue for durable work.
+
+        """
+        self.builder_queue.append(
+            BuilderStep(
+                name="background_tasks",
+                func=use_background_tasks_builder,
+                requires=[],
+                idempotent=True,
+                kwargs={
+                    "task_manager": task_manager,
+                    "session_cleanup_interval": session_cleanup_interval,
                 },
             )
         )
@@ -361,6 +435,7 @@ class AppBuilder:
             - Returns JSON: {"status": "healthy", "version": "..."}
             - Useful for container orchestration (Docker, Kubernetes).
             - Should be exempt from rate limiting.
+
         """
         self.builder_queue.append(
             BuilderStep(
@@ -397,6 +472,9 @@ class AppBuilder:
         @asynccontextmanager
         async def lifespan(app):
             logger.info("Z8ter application starting up")
+            task_manager = getattr(app.state, "task_manager", None)
+            if task_manager is not None:
+                await task_manager.start()
             try:
                 yield
             except asyncio.CancelledError:
@@ -404,6 +482,8 @@ class AppBuilder:
             except KeyboardInterrupt:
                 logger.info("Z8ter application interrupted by user")
             finally:
+                if task_manager is not None:
+                    await task_manager.stop()
                 logger.info("Z8ter application shutting down")
 
         starlette_app = Starlette(

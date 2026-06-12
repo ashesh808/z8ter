@@ -2,7 +2,7 @@
 
 This document consolidates all identified issues from security reviews, code reviews, and feature gap analysis. Items are marked as completed or pending.
 
-**Last Updated:** January 2026
+**Last Updated:** June 2026
 
 ---
 
@@ -12,12 +12,12 @@ This document consolidates all identified issues from security reviews, code rev
 | --------------------- | ----- | --------- | ------- |
 | Security (Critical)   | 4     | 4         | 0       |
 | Security (High)       | 7     | 7         | 0       |
-| Security (Medium)     | 9     | 7         | 2       |
-| Security (Low)        | 6     | 4         | 2       |
+| Security (Medium)     | 9     | 9         | 0       |
+| Security (Low)        | 6     | 5         | 1       |
 | Code Quality (High)   | 6     | 6         | 0       |
 | Code Quality (Medium) | 15    | 15        | 0       |
 | Code Quality (Low)    | 12    | 12        | 0       |
-| Feature Gaps          | 12    | 5         | 7       |
+| Feature Gaps          | 12    | 8         | 4       |
 
 ---
 
@@ -89,11 +89,13 @@ This document consolidates all identified issues from security reviews, code rev
 - [x] **SEC-018: Debug Mode Defaults to True** - Unsafe for production
   - _Fixed:_ Changed default to `False`, reads from `Z8TER_DEBUG` env var
 
-- [ ] **SEC-019: No Email Verification** - Fake accounts can be created
-  - _Status:_ Pending - Requires email infrastructure
+- [x] **SEC-019: No Email Verification** - Fake accounts can be created
+  - _Fixed (0.3.0):_ Framework support added — `TokenManager.generate/verify_email_verification_token()`
+    in `z8ter/auth/tokens.py` plus the `z8ter/email/` module for delivery.
+    Apps wire the flow with `use_email()` + a verification endpoint (see docs/security.md).
 
-- [ ] **SEC-020: No Dependency Vulnerability Scanning** - No automated CVE checks
-  - _Status:_ Pending - Recommend adding pip-audit to CI
+- [x] **SEC-020: No Dependency Vulnerability Scanning** - No automated CVE checks
+  - _Fixed (0.3.0):_ Added `pip-audit` to the `dev` extra; docs/security.md includes a CI snippet.
 
 ### Low Priority
 
@@ -109,8 +111,9 @@ This document consolidates all identified issues from security reviews, code rev
 - [x] **SEC-024: Unbounded Session Storage** - Memory exhaustion risk
   - _Fixed:_ Added `cleanup_expired()` and moved to SQLite by default
 
-- [ ] **SEC-025: .env File Security Guidance** - No documentation
-  - _Status:_ Pending - Add security documentation
+- [x] **SEC-025: .env File Security Guidance** - No documentation
+  - _Fixed (0.3.0):_ Added docs/security.md with secrets/.env handling, key generation,
+    rotation, and file-permission guidance.
 
 - [ ] **SEC-026: Dependency Versions** - Using ranges, may include vulnerabilities
   - _Status:_ Informational - Monitor with Dependabot
@@ -266,6 +269,28 @@ This document consolidates all identified issues from security reviews, code rev
     - Configuration reference
     - CLI command reference
 
+- [x] **FEAT-007: No Email/Transactional Email Support** - No email functionality
+  - _Fixed (0.3.0):_ Created `z8ter/email/` module with:
+    - `EmailMessage` / `EmailProvider` contracts
+    - `ConsoleEmailProvider` (dev), `InMemoryEmailProvider` (tests), `SMTPEmailProvider`
+    - `EmailService` with async sending (`send_email`) and Jinja templates (`send_template`)
+    - Builder: `app_builder.use_email()` with EMAIL_PROVIDER/SMTP_* config
+
+- [x] **FEAT-011: No Background Task Support** - No task queue
+  - _Fixed (0.3.0):_ Created `z8ter/tasks/` module with:
+    - `TaskManager` — startup tasks, recurring interval tasks (`@interval`), fire-and-forget `spawn()`
+    - Lifespan integration via `app_builder.use_background_tasks()`
+    - Automatic periodic `session_repo.cleanup_expired()` (configurable)
+  - _Note:_ Durable queues (Celery/RQ) intentionally left to applications.
+
+- [x] **FEAT-012: Testing Infrastructure Missing** - No test utilities
+  - _Fixed (0.3.0):_ Created `z8ter/testing.py` with:
+    - `InMemorySessionRepo` / `InMemoryUserRepo` (full contract implementations)
+    - `InMemoryEmailProvider` outbox for asserting on sent email
+    - `create_test_app()` helper
+    - docs/testing.md guide (test client setup, fixtures, examples)
+
+
 ### Pending
 
 - [ ] **FEAT-006: No Payment/Stripe Integration** - Empty billing module
@@ -276,21 +301,15 @@ This document consolidates all identified issues from security reviews, code rev
     - Subscription management
     - Customer portal redirect
 
-- [ ] **FEAT-007: No Email/Transactional Email Support** - No email functionality
-  - _Status:_ Pending
-  - _Needed:_
-    - Email service abstraction
-    - SMTP/SendGrid/Resend providers
-    - Email templates (welcome, password reset, etc.)
-    - Async sending
-
 - [ ] **FEAT-008: Incomplete Authentication** - No OAuth or password recovery
-  - _Status:_ Pending
-  - _Needed:_
+  - _Status:_ Partially completed in 0.3.0
+  - _Done (0.3.0):_
+    - [x] Password reset tokens — `TokenManager` in `z8ter/auth/tokens.py`
+    - [x] Email verification tokens — `TokenManager` (used with `z8ter/email/`)
+    - [x] Account lockout — `AccountLockout` in `z8ter/security/lockout.py`
+  - _Still needed:_
     - Google OAuth
-    - Password reset flow
-    - Email verification
-    - Account lockout
+    - Scaffolded reset/verification endpoints in the app template
 
 - [ ] **FEAT-009: No Admin Portal** - No admin functionality
   - _Status:_ Pending
@@ -307,21 +326,6 @@ This document consolidates all identified issues from security reviews, code rev
     - Feature cards
     - Testimonials section
     - Legal page templates
-
-- [ ] **FEAT-011: No Background Task Support** - No task queue
-  - _Status:_ Pending
-  - _Needed:_
-    - Simple asyncio task system
-    - Optional Celery/RQ integration
-    - Scheduled tasks
-
-- [ ] **FEAT-012: Testing Infrastructure Missing** - No test utilities
-  - _Status:_ Pending
-  - _Needed:_
-    - Test client setup guide
-    - Pytest fixtures
-    - Mock services
-    - Example tests in scaffold
 
 ---
 
@@ -354,6 +358,29 @@ z8ter/scaffold/create_project_template/
 └── .dockerignore
 ```
 
+### New Files Created in 0.3.0
+
+```
+z8ter/email/
+├── __init__.py
+├── contracts.py     # EmailMessage, EmailProvider
+├── providers.py     # Console, InMemory, SMTP providers
+└── service.py       # EmailService (async send, Jinja templates)
+
+z8ter/tasks/
+├── __init__.py
+└── manager.py       # TaskManager, IntervalTask
+
+z8ter/auth/tokens.py        # TokenManager (reset/verification tokens)
+z8ter/security/lockout.py   # AccountLockout
+z8ter/testing.py            # In-memory repos, create_test_app()
+
+docs/email.md
+docs/background-tasks.md
+docs/security.md            # includes .env guidance (SEC-025)
+docs/testing.md
+```
+
 ### Modified Files
 
 - `z8ter/__init__.py` - Thread-safe caching with RLock
@@ -382,9 +409,11 @@ z8ter/scaffold/create_project_template/
 
 ## Version History
 
-| Version | Date     | Changes                                                 |
-| ------- | -------- | ------------------------------------------------------- |
-| 0.2.6   | Jan 2026 | Security fixes, database integration, deployment config |
+| Version | Date     | Changes                                                            |
+| ------- | -------- | ------------------------------------------------------------------ |
+| 0.3.0   | Jun 2026 | Email module, background tasks, auth tokens, lockout, testing utils |
+| 0.2.7   | Jan 2026 | Packaging hardening                                                |
+| 0.2.6   | Jan 2026 | Security fixes, database integration, deployment config            |
 
 ---
 

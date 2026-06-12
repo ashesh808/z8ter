@@ -26,7 +26,7 @@ from pkgutil import extend_path  # noqa: E402
 __path__ = extend_path(__path__, __name__)  # noqa: E402
 # --------------------------------------------------------------------
 
-__version__ = "0.2.7"
+__version__ = "0.3.0"
 
 import contextvars
 import os

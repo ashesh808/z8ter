@@ -16,6 +16,10 @@
 - **Pluggable Auth** — Session middleware, Argon2 password hashing, and route guards like `@login_required`
 - **SQLite Database** — Built-in SQLite persistence with session and user repositories
 - **Security Middleware** — CSRF protection, rate limiting, security headers out of the box
+- **Account Protection** — Account lockout plus signed password-reset and email-verification tokens
+- **Transactional Email** — Pluggable providers (console, SMTP) with async sending and Jinja templates
+- **Background Tasks** — In-process asyncio task manager with interval scheduling and session cleanup
+- **Testing Utilities** — In-memory repos and an email outbox for fast, dependency-free app tests
 - **Docker Ready** — Production-ready Dockerfile and docker-compose included
 - **Health Checks** — Built-in `/health` endpoint for container orchestration
 - **Composable Builder** — `AppBuilder` wires config, templating, Vite, sessions, and auth in order
@@ -269,6 +273,124 @@ if not validate_password(password, min_length=8):
     errors.append("Password must be at least 8 characters")
 ```
 
+### Account Lockout
+
+Protect accounts from password guessing (complements per-IP rate limiting):
+
+```python
+from z8ter.security import AccountLockout
+
+lockout = AccountLockout(max_attempts=5, lockout_seconds=900)
+
+if lockout.is_locked(email):
+    return error_response()  # indistinguishable from a bad password
+if verify_password(stored_hash, password):
+    lockout.record_success(email)
+else:
+    lockout.record_failure(email, ip_address=client_ip)
+```
+
+### Password Reset & Email Verification Tokens
+
+Stateless, signed, time-limited tokens — no database table required:
+
+```python
+from z8ter.auth.tokens import TokenManager
+
+tokens = TokenManager(config("APP_SESSION_KEY"))
+
+token = tokens.generate_password_reset_token(user_id)
+user_id = tokens.verify_password_reset_token(token)  # None if invalid/expired
+
+token = tokens.generate_email_verification_token(user_id, email)
+data = tokens.verify_email_verification_token(token)  # {"uid", "email"} or None
+```
+
+See [docs/security.md](docs/security.md) for the full security guide,
+including `.env` handling and dependency auditing with `pip-audit`.
+
+---
+
+## Email
+
+Enable transactional email with a provider resolved from config:
+
+```python
+builder.use_email()  # EMAIL_PROVIDER=console (default) or smtp
+```
+
+```python
+# In a handler
+email = request.app.state.email
+await email.send_email(
+    to="user@example.com",
+    subject="Welcome!",
+    text="Thanks for signing up.",
+)
+
+# Or render from your Jinja templates
+await email.send_template(
+    to="user@example.com",
+    subject="Welcome!",
+    template="emails/welcome.html",
+    context={"name": "Ada"},
+)
+```
+
+The `console` provider logs messages during development; configure SMTP for
+production via `SMTP_HOST`, `SMTP_PORT`, `SMTP_USERNAME`, `SMTP_PASSWORD`.
+See [docs/email.md](docs/email.md).
+
+---
+
+## Background Tasks
+
+Run recurring and fire-and-forget work in-process — no broker required:
+
+```python
+from z8ter.tasks import TaskManager
+
+tasks = TaskManager()
+
+@tasks.interval(seconds=300)
+async def refresh_cache():
+    ...
+
+builder.use_background_tasks(task_manager=tasks)
+```
+
+`use_background_tasks()` also schedules hourly session cleanup
+(`session_repo.cleanup_expired()`) automatically. In handlers, spawn
+background work without delaying the response:
+
+```python
+request.app.state.task_manager.spawn(send_welcome_email, user["email"])
+```
+
+See [docs/background-tasks.md](docs/background-tasks.md).
+
+---
+
+## Testing
+
+Test apps without a database or mail server using `z8ter.testing`:
+
+```python
+from starlette.testclient import TestClient
+from z8ter.testing import InMemorySessionRepo, InMemoryUserRepo, create_test_app
+
+def test_login_flow():
+    app = create_test_app(
+        session_repo=InMemorySessionRepo(),
+        user_repo=InMemoryUserRepo(),
+    )
+    client = TestClient(app.starlette_app)
+    ...
+```
+
+Capture outbound email with `InMemoryEmailProvider` and assert on its
+`outbox`. See [docs/testing.md](docs/testing.md).
+
 ---
 
 ## Creating Pages
@@ -354,12 +476,17 @@ docker compose up
 | `DATABASE_URL` | SQLite database URL | `sqlite:///data/app.db` |
 | `APP_SESSION_KEY` | Secret key for sessions (32+ chars) | Required |
 | `VITE_DEV_SERVER` | Vite dev server URL (dev only) | - |
+| `EMAIL_PROVIDER` | Email provider: `console` or `smtp` | `console` |
+| `EMAIL_FROM` | Default sender address | - |
+| `SMTP_HOST` / `SMTP_PORT` | SMTP server (when `EMAIL_PROVIDER=smtp`) | - / `587` |
+| `SMTP_USERNAME` / `SMTP_PASSWORD` | SMTP credentials (optional) | - |
+| `SMTP_USE_TLS` / `SMTP_USE_SSL` | STARTTLS / implicit SSL | `true` / `false` |
 
 ### Health Check
 
 The `/health` endpoint returns:
 ```json
-{"status": "healthy", "version": "0.2.6"}
+{"status": "healthy", "version": "0.3.0"}
 ```
 
 ---
@@ -371,9 +498,12 @@ The `/health` endpoint returns:
 | `z8ter.core` | ASGI wrapper around Starlette |
 | `z8ter.endpoints` | Base `View` and `API` classes |
 | `z8ter.builders` | `AppBuilder` and composable setup steps |
-| `z8ter.auth` | Session management, crypto, guards, middleware |
+| `z8ter.auth` | Session management, crypto, guards, middleware, tokens |
 | `z8ter.database` | SQLite persistence, session/user repositories |
-| `z8ter.security` | CSRF, rate limiting, headers, validators |
+| `z8ter.security` | CSRF, rate limiting, headers, validators, lockout |
+| `z8ter.email` | Transactional email (console/SMTP providers, async service) |
+| `z8ter.tasks` | In-process background task manager |
+| `z8ter.testing` | In-memory repos and test app helpers |
 | `z8ter.route_builders` | Auto-discovery of views and APIs |
 | `z8ter.vite` | Vite asset integration (dev server + manifest) |
 | `z8ter.cli` | CLI commands |
@@ -411,6 +541,8 @@ The `/health` endpoint returns:
 | `use_csrf()` | Enable CSRF protection |
 | `use_rate_limiting()` | Enable rate limiting |
 | `use_security_headers()` | Add security headers |
+| `use_email()` | Enable transactional email service |
+| `use_background_tasks()` | Enable background task manager |
 | `use_health_check()` | Add /health endpoint |
 | `use_errors()` | Register error handlers |
 | `build(debug)` | Build the application |

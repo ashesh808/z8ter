@@ -8,7 +8,12 @@
 - **API Decorators**: Clean, decorator-based API endpoint definitions
 - **React Islands**: Modern React components as Web Components for interactive UI
 - **Vite Integration**: Fast development with HMR and optimized production builds
-- **Pluggable Auth**: Protocol-based authentication with session management
+- **Pluggable Auth**: Protocol-based authentication with session management,
+  password-reset/verification tokens, and account lockout
+- **Security Baseline**: CSRF, rate limiting, security headers, audit logging
+- **Transactional Email**: Pluggable providers (console, SMTP) with async sending
+- **Background Tasks**: In-process asyncio task manager with interval scheduling
+- **Testing Utilities**: In-memory repos and email outbox for fast app tests
 - **Builder Pattern**: Composable application assembly with dependency validation
 - **CLI Tools**: Scaffold pages, APIs, and entire projects
 
@@ -37,6 +42,10 @@ app = builder.build(debug=True)
 | [API Endpoints](api-endpoints.md) | Build REST API endpoints |
 | [React Components](react-components.md) | Add interactive React islands |
 | [Authentication](authentication.md) | Implement user authentication |
+| [Security](security.md) | Middleware, lockout, tokens, secrets guidance |
+| [Email](email.md) | Send transactional email |
+| [Background Tasks](background-tasks.md) | Run recurring and fire-and-forget work |
+| [Testing](testing.md) | Test apps with in-memory fakes |
 | [Configuration](configuration.md) | Configure your application |
 | [CLI Reference](cli.md) | Command-line tools |
 

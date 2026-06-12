@@ -20,6 +20,7 @@ Security:
 
 from __future__ import annotations
 
+import logging
 from typing import TYPE_CHECKING, Any
 
 from starlette.datastructures import URLPath
@@ -31,11 +32,13 @@ from z8ter.core import Z8ter
 from z8ter.errors import register_exception_handlers
 from z8ter.security.csrf import CSRFMiddleware
 from z8ter.security.headers import SecurityHeadersMiddleware
-from z8ter.security.rate_limit import RateLimitConfig, RateLimitMiddleware
+from z8ter.security.rate_limit import RateLimitMiddleware
 from z8ter.vite import vite_script_tag
 
 if TYPE_CHECKING:
     pass
+
+logger = logging.getLogger("z8ter")
 
 # Minimum secret key length for security
 MIN_SECRET_KEY_LENGTH = 32
@@ -78,7 +81,7 @@ def use_service_builder(context: dict[str, Any]) -> None:
     # Inject config if service has a set_config method
     # Note: We only support set_config() method, not direct attribute assignment,
     # to avoid overwriting existing data or failing on read-only properties.
-    if hasattr(obj, "set_config") and callable(getattr(obj, "set_config")):
+    if hasattr(obj, "set_config") and callable(obj.set_config):
         cfg = services.get("config")
         if cfg is None:
             raise RuntimeError(
@@ -245,6 +248,7 @@ def use_authentication_builder(context: dict[str, Any]) -> None:
 
     Raises:
         ImportError: If z8ter-auth package is not installed.
+
     """
     try:
         from z8ter.auth.middleware import AuthSessionMiddleware
@@ -277,6 +281,7 @@ def use_csrf_builder(context: dict[str, Any]) -> None:
         - CSRF tokens are validated on POST, PUT, DELETE, PATCH requests.
         - Tokens can be submitted via form field 'csrf_token' or header 'X-CSRF-Token'.
         - The token is available in request.state.csrf_token for templates.
+
     """
     app: Z8ter = context["app"]
     state = app.starlette_app.state
@@ -312,6 +317,7 @@ def use_rate_limiting_builder(context: dict[str, Any]) -> None:
     Notes:
         - Rate limiting is per-IP address.
         - For production, consider Redis-based rate limiting for distributed systems.
+
     """
     app: Z8ter = context["app"]
     state = app.starlette_app.state
@@ -347,6 +353,7 @@ def use_security_headers_builder(context: dict[str, Any]) -> None:
     Notes:
         - HSTS should only be enabled in production with proper HTTPS.
         - CSP requires careful tuning to avoid breaking functionality.
+
     """
     app: Z8ter = context["app"]
     state = app.starlette_app.state
@@ -374,6 +381,125 @@ def use_security_headers_builder(context: dict[str, Any]) -> None:
     state._z8_security_headers_added = True
 
 
+def use_email_builder(context: dict[str, Any]) -> None:
+    """Publish an `EmailService` built from config or an explicit provider.
+
+    Context inputs:
+        - email_provider (optional): explicit `EmailProvider` instance.
+        - email_default_from (optional): overrides EMAIL_FROM from config.
+
+    Config keys (when no explicit provider is given):
+        - EMAIL_PROVIDER: "console" (default) or "smtp".
+        - EMAIL_FROM: default sender address.
+        - SMTP_HOST / SMTP_PORT / SMTP_USERNAME / SMTP_PASSWORD: SMTP settings.
+        - SMTP_USE_TLS: "true"/"false" (default: true; STARTTLS).
+        - SMTP_USE_SSL: "true"/"false" (default: false; implicit SSL).
+
+    Raises:
+        TypeError: If EMAIL_PROVIDER=smtp but SMTP_HOST is missing.
+        ValueError: If EMAIL_PROVIDER names an unknown provider.
+
+    Side effects:
+        - Sets `app.state.email`.
+        - Publishes `services["email"]`.
+
+    """
+    from z8ter.email.providers import ConsoleEmailProvider, SMTPEmailProvider
+    from z8ter.email.service import EmailService
+
+    app: Z8ter = context["app"]
+    services = ensure_services(context)
+
+    provider = context.get("email_provider")
+    if provider is None:
+        kind = (
+            get_config_value(context=context, key="EMAIL_PROVIDER")
+            or "console"
+        ).lower()
+        if kind == "console":
+            provider = ConsoleEmailProvider()
+        elif kind == "smtp":
+            host = get_config_value(context=context, key="SMTP_HOST")
+            if not host:
+                raise TypeError(
+                    "Z8ter: EMAIL_PROVIDER=smtp requires SMTP_HOST in config."
+                )
+            port = int(get_config_value(context=context, key="SMTP_PORT") or 587)
+            use_tls = str(
+                get_config_value(context=context, key="SMTP_USE_TLS") or "true"
+            ).lower() == "true"
+            use_ssl = str(
+                get_config_value(context=context, key="SMTP_USE_SSL") or "false"
+            ).lower() == "true"
+            provider = SMTPEmailProvider(
+                host=host,
+                port=port,
+                username=get_config_value(context=context, key="SMTP_USERNAME"),
+                password=get_config_value(context=context, key="SMTP_PASSWORD"),
+                use_tls=use_tls,
+                use_ssl=use_ssl,
+            )
+        else:
+            raise ValueError(
+                f"Z8ter: unknown EMAIL_PROVIDER '{kind}'. "
+                "Use 'console' or 'smtp', or pass provider= to use_email()."
+            )
+
+    default_from = context.get("email_default_from") or get_config_value(
+        context=context, key="EMAIL_FROM"
+    )
+    service = EmailService(provider, default_from=default_from)
+    app.starlette_app.state.email = service
+    services["email"] = service
+
+
+def use_background_tasks_builder(context: dict[str, Any]) -> None:
+    """Publish a `TaskManager` started/stopped by the app lifespan.
+
+    Context inputs:
+        - task_manager (optional): explicit `TaskManager` instance.
+        - session_cleanup_interval (optional): seconds between automatic
+          `session_repo.cleanup_expired()` runs (None disables it).
+
+    Side effects:
+        - Sets `app.state.task_manager` (the lifespan in `AppBuilder.build`
+          starts it on startup and stops it on shutdown).
+        - Publishes `services["tasks"]`.
+
+    Notes:
+        - If `session_cleanup_interval` is set, the cleanup task resolves
+          the session repo lazily at each tick, so step ordering relative
+          to `use_auth_repos` does not matter.
+
+    """
+    from z8ter.tasks.manager import TaskManager
+
+    app: Z8ter = context["app"]
+    state = app.starlette_app.state
+    services = ensure_services(context)
+
+    manager: TaskManager = context.get("task_manager") or TaskManager()
+
+    cleanup_interval = context.get("session_cleanup_interval")
+    if cleanup_interval:
+
+        def _cleanup_sessions() -> None:
+            repo = getattr(state, "session_repo", None)
+            if repo is not None and hasattr(repo, "cleanup_expired"):
+                removed = repo.cleanup_expired()
+                if removed:
+                    logger.info("Session cleanup removed %d session(s)", removed)
+
+        manager.add_interval_task(
+            _cleanup_sessions,
+            seconds=cleanup_interval,
+            name="session_cleanup",
+        )
+
+    state.task_manager = manager
+    services["tasks"] = manager
+
+
 def use_health_check_builder(context: dict[str, Any]) -> None:
     """Add a health check endpoint at /health.
 
@@ -385,6 +511,7 @@ def use_health_check_builder(context: dict[str, Any]) -> None:
         - Returns JSON: {"status": "healthy", "version": "...", ...}
         - Useful for container orchestration (Docker, Kubernetes).
         - Exempt from rate limiting by default.
+
     """
     from starlette.responses import JSONResponse
     from starlette.routing import Route

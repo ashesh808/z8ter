@@ -12,6 +12,8 @@ Public modules:
 - `middleware`: Starlette middleware that resolves `request.state.user`.
 - `guards`: Decorators for protecting routes (`login_required`,
   `skip_if_authenticated`).
+- `tokens`: Signed, time-limited tokens for password reset and email
+  verification (`TokenManager`).
 
 Design notes:
 - Storage is fully pluggable via `SessionRepo` and `UserRepo` implementations.
@@ -29,6 +31,7 @@ from .crypto import hash_password, needs_rehash, verify_password
 from .guards import login_required, skip_if_authenticated
 from .middleware import AuthSessionMiddleware
 from .sessions import SessionManager
+from .tokens import TokenManager
 
 __all__ = [
     "SessionRepo",
@@ -40,4 +43,5 @@ __all__ = [
     "AuthSessionMiddleware",
     "login_required",
     "skip_if_authenticated",
+    "TokenManager",
 ]
