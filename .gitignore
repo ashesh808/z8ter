@@ -1,15 +1,29 @@
-.mypy_cache
-.env
-venv
-.venv
-.vscode
-uv.lock
-dist
+# Python caches and build artifacts
 __pycache__/
 *.py[cod]
-.DS_Store
-z8ter.egg-info
-z8ter-auth.egg-info
-node_modules
+*.egg-info/
+.coverage
+.coverage.*
+htmlcov/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+build/
+dist/
+
+# Local environments and configuration
+.env
+.env.*
+!.env.example
+.venv/
+venv/
+.vscode/
+uv.lock
+
+# Frontend artifacts
+node_modules/
 static/css/output.css
 static/js/pages/**/*.js
+
+# Operating-system files
+.DS_Store
