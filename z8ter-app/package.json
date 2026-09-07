@@ -9,7 +9,7 @@
     "daisyui": "^5.7.28",
     "tailwindcss": "^4.3.3",
     "typescript": "^5.9.3",
-    "vite": "^7.3.6"
+    "vite": "^8.2.2"
   },
   "scripts": {
     "dev:css": "npx @tailwindcss/cli -i src/css/app.css -o static/css/output.css -w",
