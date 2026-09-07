@@ -5,7 +5,7 @@
     "@types/react": "^18.3.31",
     "@types/react-dom": "^18.3.7",
     "@vitejs/plugin-react": "^4.7.0",
-    "concurrently": "^8.2.2",
+    "concurrently": "^10.0.5",
     "daisyui": "^5.7.28",
     "tailwindcss": "^4.3.3",
     "typescript": "^5.9.3",
