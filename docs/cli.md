@@ -1,422 +1,153 @@
 # CLI Reference
 
-Z8ter includes a command-line interface (CLI) for common development tasks like creating projects, scaffolding pages and APIs, and running the development server.
-
-## Installation
-
-The CLI is installed automatically with Z8ter:
+The `z8` command is installed with Z8ter. Inside a uv-managed project, prefix commands with `uv run` so they use that project's environment.
 
 ```bash
-pip install z8ter
+uv run z8 --help
+uv run z8 create_page --help
 ```
 
-Verify installation:
+## Create a project
 
 ```bash
-z8 --help
-```
-
-## Commands
-
-### `z8 new` - Create New Project
-
-Create a new Z8ter project from the template:
-
-```bash
-z8 new <project_name>
-```
-
-**Arguments:**
-- `project_name`: Name of the project directory to create
-
-**Example:**
-
-```bash
-z8 new myapp
+uvx --from z8ter z8 new myapp
 cd myapp
-```
-
-This creates a complete project structure:
-
-```
-myapp/
-├── .env
-├── main.py
-├── requirements.txt
-├── package.json
-├── vite.config.ts
-├── tsconfig.json
-├── endpoints/
-│   ├── views/
-│   │   └── index.py
-│   └── api/
-│       └── hello.py
-├── templates/
-│   ├── base.jinja
-│   └── pages/
-│       └── index.jinja
-├── content/
-│   └── index.yaml
-├── static/
-└── src/
-    └── ts/
-        ├── app.ts
-        └── pages/
-            └── index.ts
-```
-
-**Exit Codes:**
-- `0`: Success
-- `2`: Directory is not empty
-- `3`: Template files not found
-- `4`: Copy error
-
-### `z8 create_page` - Scaffold a Page
-
-Create a new SSR page with all associated files:
-
-```bash
-z8 create_page <name>
-```
-
-**Arguments:**
-- `name`: Page name (can include path like `app/dashboard`)
-
-**Examples:**
-
-```bash
-# Simple page
-z8 create_page about
-
-# Nested page
-z8 create_page app/settings
-z8 create_page admin/users/list
-```
-
-**Generated Files:**
-
-For `z8 create_page products`:
-
-```
-endpoints/views/products.py      # View class
-templates/pages/products.jinja   # Jinja template
-content/products.yaml            # Page content
-src/ts/pages/products.ts         # TypeScript module
-```
-
-**View Template:**
-
-```python
-# endpoints/views/products.py
-from z8ter.endpoints.view import View
-from z8ter.requests import Request
-from z8ter.responses import Response
-
-
-class Products(View):
-    async def get(self, request: Request) -> Response:
-        return self.render(request, "pages/products.jinja")
-```
-
-**Jinja Template:**
-
-```jinja
-{# templates/pages/products.jinja #}
-{% extends "base.jinja" %}
-
-{% block content %}
-<main class="container mx-auto px-4 py-8">
-    <h1>{{ page_content.title }}</h1>
-</main>
-{% endblock %}
-```
-
-**Content File:**
-
-```yaml
-# content/products.yaml
-title: Products
-```
-
-**TypeScript Module:**
-
-```typescript
-// src/ts/pages/products.ts
-interface PageCtx {
-  pageId: string;
-  id: string;
-  body: HTMLElement;
-}
-
-export default function initProducts(ctx: PageCtx) {
-  console.log('Products page initialized');
-}
-```
-
-### `z8 create_api` - Scaffold an API
-
-Create a new API endpoint class:
-
-```bash
-z8 create_api <name>
-```
-
-**Arguments:**
-- `name`: API name (determines mount path)
-
-**Examples:**
-
-```bash
-z8 create_api users
-z8 create_api products
-z8 create_api admin/reports
-```
-
-**Generated File:**
-
-For `z8 create_api tasks`:
-
-```python
-# endpoints/api/tasks.py
-from z8ter.endpoints.api import API
-from z8ter.requests import Request
-from z8ter.responses import JSONResponse
-
-
-class Tasks(API):
-    @API.endpoint("GET", "/")
-    async def list_tasks(self, request: Request):
-        return JSONResponse({
-            "ok": True,
-            "data": []
-        })
-
-    @API.endpoint("GET", "/{id:int}")
-    async def get_task(self, request: Request):
-        task_id = request.path_params["id"]
-        return JSONResponse({
-            "ok": True,
-            "data": {"id": task_id}
-        })
-
-    @API.endpoint("POST", "/")
-    async def create_task(self, request: Request):
-        data = await request.json()
-        return JSONResponse({
-            "ok": True,
-            "data": data
-        }, status_code=201)
-```
-
-### `z8 run` - Run Development Server
-
-Start the application with Uvicorn:
-
-```bash
-z8 run [mode]
-```
-
-**Arguments:**
-- `mode`: Server mode (optional, default: `dev`)
-
-**Modes:**
-
-| Mode | Host | Reload | Description |
-|------|------|--------|-------------|
-| `dev` | `127.0.0.1` | Yes | Local development with auto-reload |
-| `prod` | `127.0.0.1` | No | Production mode, localhost only |
-| `LAN` | LAN IP | Yes | Accessible from local network |
-| `WAN` | `0.0.0.0` | No | Accessible from anywhere |
-
-**Examples:**
-
-```bash
-# Development (default)
-z8 run
-z8 run dev
-
-# Production
-z8 run prod
-
-# Network access (for testing on other devices)
-z8 run LAN
-
-# Public access (use with caution)
-z8 run WAN
-```
-
-**Environment Variables:**
-
-| Variable | Default | Description |
-|----------|---------|-------------|
-| `PORT` | `8000` | Server port |
-| `HOST` | varies by mode | Server host |
-
-```bash
-PORT=3000 z8 run dev
-```
-
-## Development Workflow
-
-### 1. Create Project
-
-```bash
-z8 new myapp
-cd myapp
-```
-
-### 2. Install Dependencies
-
-```bash
-# Python
-pip install -r requirements.txt
-
-# Node.js
-npm install
-```
-
-### 3. Start Development Servers
-
-**Terminal 1 - Python Server:**
-
-```bash
-z8 run dev
-```
-
-**Terminal 2 - Vite Dev Server (for HMR):**
-
-```bash
-npm run dev
-```
-
-Make sure `.env` has:
-
-```env
-VITE_DEV_SERVER=http://localhost:5173
-```
-
-### 4. Create Pages & APIs
-
-```bash
-# Create a new page
-z8 create_page products
-
-# Create an API
-z8 create_api products
-```
-
-### 5. Build for Production
-
-```bash
-# Build frontend assets
+uv sync
+npm ci
 npm run build
-
-# Run in production mode
-z8 run prod
+uv run z8 run dev
 ```
 
-## Scaffold Templates
+`z8 new PROJECT_NAME` copies the packaged starter into a new or empty directory. It does not install dependencies. The starter includes Python views/APIs, Jinja templates, a uv project, npm lockfile, Solid custom elements, and Tailwind/Vite configuration.
 
-The CLI uses Jinja2 templates stored in the package. Custom delimiters avoid conflicts:
+Exit codes are `0` for success, `2` for an occupied/non-directory target, `3` for a missing packaged template, and `4` for a copy error.
 
-- Variables: `[[ variable ]]`
-- Blocks: `[% block %]`
-- Comments: `[# comment #]`
+## Generate pages and APIs
 
-### Custom Scaffold Directory
-
-For local template customization, create `scaffold_dev/` in your project:
-
-```
-scaffold_dev/
-├── create_page/
-│   ├── view.py.jinja
-│   ├── template.jinja.jinja
-│   ├── content.yaml.jinja
-│   └── ts.ts.jinja
-└── create_api/
-    └── api.py.jinja
+```bash
+uv run z8 create_page products
+uv run z8 create_page app/settings
+uv run z8 create_api products
+uv run z8 create_api admin/reports
 ```
 
-The CLI checks `scaffold_dev/` first, then falls back to the package templates.
+For `create_page products`, the generator writes:
 
-## Programmatic Usage
+```text
+endpoints/views/products.py
+templates/pages/products.jinja
+content/products.yaml
+src/ts/pages/products.ts
+```
 
-The CLI commands can also be used programmatically:
+The view subclasses `View`; the template extends `base.jinja`; YAML contains a `headings` mapping; the TypeScript file exports an empty initializer. Edit these generated files to implement your page.
+
+`create_api products` writes `endpoints/api/products.py` with a decorated sample handler. It does not generate a database model or a complete CRUD implementation.
+
+Names are normalized to lowercase and may contain nested path segments. Existing files are skipped. The Python functions accept `force=True` for deliberate replacement; the command-line parser does not expose a `--force` flag for page/API generation.
+
+## Run the Python server
+
+```bash
+uv run z8 run dev
+uv run z8 run prod
+```
+
+Omitting the mode selects **prod**, not dev. The CLI uses port 8000 and these mode defaults:
+
+- `dev`: `127.0.0.1`, reload enabled.
+- `prod`: `127.0.0.1`, reload disabled.
+- `LAN`: the detected LAN address, reload enabled.
+- `WAN`: `0.0.0.0`, reload enabled.
+
+LAN/WAN are development convenience modes, not a production-hardening switch. For a container or a custom port without reload, run Uvicorn directly against the generated ASGI object:
+
+```bash
+Z8TER_DEBUG=false uv run uvicorn main:asgi_app --host 0.0.0.0 --port 8000
+```
+
+In 0.3.1, `z8 run` uses `z8ter.cli.run_server:load_app`. It imports `main`, reuses callable `main.asgi_app` or `main.app` in that order, and otherwise calls `main.app_builder.build()`. Reusing the built app preserves middleware and services instead of consuming the builder queue twice. Export `Z8TER_APP_FACTORY` only when supplying your own ASGI factory. The CLI also defaults `Z8TER_DEBUG` from the mode before importing the app; an explicit environment value is preserved. `PORT=3000 z8 run dev` does not override the CLI port; use `uv run uvicorn main:asgi_app --port 3000` or the Python `run_server(port=3000)` function.
+
+## Frontend development
+
+The generated `npm run dev` starts CSS watch, Vite build-watch, and the Python server together. With uv, run it through the project environment:
+
+```bash
+uv run -- npm run dev
+```
+
+Do not also start a second `z8 run dev` process on port 8000. Alternatively, use separate terminals for the individual scripts:
+
+```bash
+# Terminal 1
+npm run dev:css
+
+# Terminal 2
+npm run dev:js
+
+# Terminal 3
+uv run z8 run dev
+```
+
+This workflow rebuilds files under `static/`; it does not start a Vite HMR server. Keep `VITE_DEV_SERVER` unset. If you choose a Vite dev-server workflow yourself, export its URL before importing the Python app. See [Configuration](configuration.md).
+
+## SQLite commands
+
+The `db` subcommands initialize and inspect the built-in SQLite schema. They are needed when your application uses the bundled database, not for every SSR page.
+
+```bash
+uv run z8 db init --url sqlite:////absolute/path/to/app.db
+uv run z8 db status --url sqlite:////absolute/path/to/app.db
+uv run z8 db reset --url sqlite:////absolute/path/to/app.db
+```
+
+`reset` drops and recreates tables. It prompts for `yes`; `--force` skips that prompt. Use it only when you intend to erase the data.
+
+Without `--url`, these commands read `DATABASE_URL` from the process environment, then fall back to the framework default. They do not load your project's `.env` file. The current SQLite parser treats the default `sqlite:///data/app.db` as `/data/app.db`; supply an explicit writable absolute URL.
+
+## Programmatic API
 
 ```python
-from z8ter.cli.new import scaffold_project
-from z8ter.cli.create import scaffold_page, scaffold_api
+from pathlib import Path
+import z8ter
+from z8ter.cli.new import new_project
+from z8ter.cli.create import create_api, create_page
 
-# Create project
-result = scaffold_project("myapp")
+result = new_project("myapp")
 if result == 0:
-    print("Project created!")
-
-# Scaffold page
-scaffold_page("products")
-
-# Scaffold API
-scaffold_api("products")
+    z8ter.set_app_dir(Path("myapp").resolve())
+    create_page("products")
+    create_api("products")
 ```
+
+The callable names are `new_project`, `create_page`, and `create_api`. There are no public `scaffold_project`, `scaffold_page`, or `scaffold_api` functions.
+
+## Override page/API generator templates
+
+The page/API generator checks a `scaffold_dev` directory relative to the working directory before packaged templates. Use the actual template names:
+
+```text
+scaffold_dev/
+  create_page_templates/
+    view.py.j2
+    page.jinja.j2
+    page.yaml.j2
+    page.ts.j2
+  create_api_template/
+    api.py.j2
+```
+
+Variables use `[[ variable ]]` and blocks use `[% block %]`. This override applies to page/API generation; `z8 new` copies the packaged project template separately.
 
 ## Troubleshooting
 
-### Command Not Found
+- Command not found: use `uv run z8 ...` after `uv sync`, or activate the environment where Z8ter is installed.
+- Missing Vite manifest: run `npm run build` before serving templates that call `vite_script_tag`.
+- Import errors: run from the generated project root and confirm the factory name matches `main.py`.
+- Occupied port: choose another port with Uvicorn's `--port` option.
 
-If `z8` is not found after installation:
+## Next steps
 
-```bash
-# Check if it's in PATH
-which z8
-
-# Or use Python module directly
-python -m z8ter.cli.main --help
-```
-
-### Permission Denied
-
-```bash
-# Use pip with user flag
-pip install --user z8ter
-
-# Or in a virtual environment
-python -m venv venv
-source venv/bin/activate
-pip install z8ter
-```
-
-### Template Not Found
-
-If scaffold templates are missing:
-
-```bash
-# Reinstall the package
-pip install --force-reinstall z8ter
-```
-
-### Port Already in Use
-
-```bash
-# Use a different port
-PORT=3000 z8 run dev
-
-# Or find and kill the process
-lsof -i :8000
-kill <PID>
-```
-
-## Quick Reference
-
-| Command | Description |
-|---------|-------------|
-| `z8 new <name>` | Create new project |
-| `z8 create_page <name>` | Scaffold SSR page |
-| `z8 create_api <name>` | Scaffold API endpoint |
-| `z8 run [mode]` | Run dev server |
-
-## Next Steps
-
-- [Getting Started](getting-started.md) - Create your first app
-- [Views & Pages](views.md) - Understand page structure
-- [API Endpoints](api-endpoints.md) - Build REST APIs
+- [Getting Started](getting-started.md)
+- [Project Structure](project-structure.md)
+- [Views & Pages](views.md)

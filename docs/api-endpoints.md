@@ -1,18 +1,19 @@
 # API Endpoints
 
-Z8ter provides a clean, decorator-based approach to building REST APIs. API classes group related endpoints and are automatically discovered and mounted.
+Z8ter discovers subclasses of `API` under `endpoints/api`. Decorated methods become HTTP routes and must return a Starlette-compatible response, such as `JSONResponse`.
 
-## Creating an API
+## Create an API
 
-### Using the CLI
+From your generated project directory:
 
 ```bash
-z8 create_api products
+uv run z8 create_api products
 ```
 
-This generates `endpoints/api/products.py`:
+This creates `endpoints/api/products.py`. Replace the generated sample with your application's handlers. A complete small example is:
 
 ```python
+# endpoints/api/products.py
 from z8ter.endpoints.api import API
 from z8ter.requests import Request
 from z8ter.responses import JSONResponse
@@ -20,573 +21,96 @@ from z8ter.responses import JSONResponse
 
 class Products(API):
     @API.endpoint("GET", "/")
-    async def list_products(self, request: Request):
-        return JSONResponse({"ok": True, "products": []})
-```
-
-### Manual Creation
-
-Create `endpoints/api/products.py`:
-
-```python
-from z8ter.endpoints.api import API
-from z8ter.requests import Request
-from z8ter.responses import JSONResponse
-
-
-class Products(API):
-    @API.endpoint("GET", "/")
-    async def list_all(self, request: Request):
-        products = await fetch_products()
-        return JSONResponse({
-            "ok": True,
-            "data": products
-        })
+    async def list_products(self, request: Request) -> JSONResponse:
+        return JSONResponse({"products": [{"id": 1, "name": "Notebook"}]})
 
     @API.endpoint("GET", "/{product_id:int}")
-    async def get_one(self, request: Request):
+    async def get_product(self, request: Request) -> JSONResponse:
         product_id = request.path_params["product_id"]
-        product = await fetch_product(product_id)
-
-        if not product:
-            return JSONResponse({
-                "ok": False,
-                "error": {"message": "Product not found"}
-            }, status_code=404)
-
-        return JSONResponse({
-            "ok": True,
-            "data": product
-        })
-
-    @API.endpoint("POST", "/")
-    async def create(self, request: Request):
-        data = await request.json()
-        product = await create_product(data)
-        return JSONResponse({
-            "ok": True,
-            "data": product
-        }, status_code=201)
-
-    @API.endpoint("PUT", "/{product_id:int}")
-    async def update(self, request: Request):
-        product_id = request.path_params["product_id"]
-        data = await request.json()
-        product = await update_product(product_id, data)
-        return JSONResponse({
-            "ok": True,
-            "data": product
-        })
-
-    @API.endpoint("DELETE", "/{product_id:int}")
-    async def delete(self, request: Request):
-        product_id = request.path_params["product_id"]
-        await delete_product(product_id)
-        return JSONResponse({
-            "ok": True,
-            "message": "Product deleted"
-        })
+        if product_id != 1:
+            return JSONResponse({"error": "Product not found"}, status_code=404)
+        return JSONResponse({"id": 1, "name": "Notebook"})
 ```
 
-## The API Class
+Requests reach `/api/products/` and `/api/products/1`. A route decorated with `"/"` includes a trailing slash; Starlette may redirect requests to its canonical URL.
 
-### Structure
+## Route discovery
+
+The default builder scans `endpoints.api` for `API` subclasses. A class in `endpoints.api.products` mounts at `/api/products`; a class in `endpoints.api.admin.reports` mounts at `/api/admin/reports`. Decorator paths extend that mount.
+
+`@API.endpoint(method, path)` accepts one HTTP method and a path relative to the class mount. Starlette converters such as `/{id:int}`, `/{name}`, and `/{filepath:path}` are available through `request.path_params`.
+
+Mount IDs are derived from the class's module. There is no supported public `api_id` override attribute, and the route builder does not add a second `/api` prefix. The lower-level `build_routes_from_apis(package_or_path)` and Starlette routing can be used for custom composition.
+
+One instance of each API class is shared by its registered handlers. Do not put request-specific values on `self`; use local variables or `request.state`. Only decorated methods declared on the class are collected.
+
+## Request bodies and validation
+
+`request.json()` parses JSON; it does not validate an application schema. Check type and fields before use:
 
 ```python
-from z8ter.endpoints.api import API
-from z8ter.requests import Request
-from z8ter.responses import JSONResponse
-
-
-class MyAPI(API):
-    # Optional: override the default mount path
-    # Default is derived from module: api.users → /users
-    api_id = "custom-path"
-
-    @API.endpoint("GET", "/")
-    async def my_endpoint(self, request: Request):
-        return JSONResponse({"message": "Hello"})
-```
-
-### The `@API.endpoint` Decorator
-
-```python
-@API.endpoint(method: str, path: str)
-```
-
-- **method**: HTTP method (`GET`, `POST`, `PUT`, `DELETE`, `PATCH`, etc.)
-- **path**: Route path relative to the API mount point
-
-```python
-class Users(API):
-    # GET /api/users/
-    @API.endpoint("GET", "/")
-    async def list_users(self, request: Request):
-        pass
-
-    # GET /api/users/123
-    @API.endpoint("GET", "/{user_id:int}")
-    async def get_user(self, request: Request):
-        pass
-
-    # POST /api/users/
-    @API.endpoint("POST", "/")
-    async def create_user(self, request: Request):
-        pass
-
-    # PUT /api/users/123/profile
-    @API.endpoint("PUT", "/{user_id:int}/profile")
-    async def update_profile(self, request: Request):
-        pass
-```
-
-## URL Routing
-
-### Automatic Mount Points
-
-The API is mounted based on its file location:
-
-| File | Mount Point |
-|------|-------------|
-| `endpoints/api/users.py` | `/api/users` |
-| `endpoints/api/products.py` | `/api/products` |
-| `endpoints/api/auth.py` | `/api/auth` |
-
-### Path Parameters
-
-Use Starlette path parameter syntax:
-
-```python
-class Orders(API):
-    # /api/orders/123
-    @API.endpoint("GET", "/{order_id:int}")
-    async def get_order(self, request: Request):
-        order_id = request.path_params["order_id"]
-        return JSONResponse({"order_id": order_id})
-
-    # /api/orders/123/items/456
-    @API.endpoint("GET", "/{order_id:int}/items/{item_id:int}")
-    async def get_order_item(self, request: Request):
-        order_id = request.path_params["order_id"]
-        item_id = request.path_params["item_id"]
-        return JSONResponse({
-            "order_id": order_id,
-            "item_id": item_id
-        })
-```
-
-Parameter types:
-- `{param}` - String (default)
-- `{param:int}` - Integer
-- `{param:float}` - Float
-- `{param:path}` - Path (matches slashes)
-
-## Request Handling
-
-### JSON Body
-
-```python
-@API.endpoint("POST", "/")
-async def create(self, request: Request):
-    data = await request.json()
-    name = data.get("name")
-    email = data.get("email")
-    # ...
-```
-
-### Query Parameters
-
-```python
-@API.endpoint("GET", "/search")
-async def search(self, request: Request):
-    query = request.query_params.get("q", "")
-    page = int(request.query_params.get("page", 1))
-    limit = int(request.query_params.get("limit", 20))
-
-    results = await search_products(query, page, limit)
-    return JSONResponse({
-        "ok": True,
-        "data": results,
-        "page": page,
-        "limit": limit
-    })
-```
-
-### Headers
-
-```python
-@API.endpoint("GET", "/protected")
-async def protected(self, request: Request):
-    auth_header = request.headers.get("authorization")
-    if not auth_header:
-        return JSONResponse({
-            "ok": False,
-            "error": {"message": "Missing authorization header"}
-        }, status_code=401)
-    # Validate token...
-```
-
-### Form Data
-
-```python
-@API.endpoint("POST", "/upload")
-async def upload(self, request: Request):
-    form = await request.form()
-    file = form.get("file")
-
-    if file:
-        contents = await file.read()
-        # Process file...
-
-    return JSONResponse({"ok": True})
-```
-
-## Response Types
-
-### JSONResponse
-
-The most common response type for APIs:
-
-```python
-from z8ter.responses import JSONResponse
-
-# Success response
-return JSONResponse({
-    "ok": True,
-    "data": {"id": 1, "name": "Product"}
-})
-
-# With status code
-return JSONResponse({
-    "ok": True,
-    "data": product
-}, status_code=201)
-
-# Error response
-return JSONResponse({
-    "ok": False,
-    "error": {"message": "Not found", "code": "NOT_FOUND"}
-}, status_code=404)
-```
-
-### Other Response Types
-
-```python
-from z8ter.responses import (
-    Response,
-    PlainTextResponse,
-    HTMLResponse,
-    RedirectResponse,
-    FileResponse,
-    StreamingResponse
-)
-
-# Plain text
-return PlainTextResponse("Hello, World!")
-
-# HTML
-return HTMLResponse("<h1>Hello</h1>")
-
-# Redirect
-return RedirectResponse(url="/new-location")
-
-# File download
-return FileResponse(
-    path="/path/to/file.pdf",
-    filename="document.pdf"
-)
-
-# Streaming
-async def generate():
-    for i in range(10):
-        yield f"data: {i}\n\n"
-        await asyncio.sleep(1)
-
-return StreamingResponse(generate(), media_type="text/event-stream")
-```
-
-## Response Conventions
-
-We recommend consistent response shapes:
-
-### Success Response
-
-```json
-{
-    "ok": true,
-    "data": { ... }
-}
-```
-
-### Error Response
-
-```json
-{
-    "ok": false,
-    "error": {
-        "message": "Human-readable message",
-        "code": "ERROR_CODE"
-    }
-}
-```
-
-### List Response
-
-```json
-{
-    "ok": true,
-    "data": [ ... ],
-    "meta": {
-        "total": 100,
-        "page": 1,
-        "limit": 20
-    }
-}
-```
-
-## Error Handling
-
-### HTTP Exceptions
-
-```python
-from starlette.exceptions import HTTPException
-
-@API.endpoint("GET", "/{id:int}")
-async def get_item(self, request: Request):
-    item_id = request.path_params["id"]
-    item = await fetch_item(item_id)
-
-    if not item:
-        raise HTTPException(
-            status_code=404,
-            detail="Item not found"
-        )
-
-    return JSONResponse({"ok": True, "data": item})
-```
-
-### Custom Error Responses
-
-```python
-@API.endpoint("POST", "/")
-async def create(self, request: Request):
+# Add this method inside your API class.
+@API.endpoint("POST", "/echo")
+async def echo(self, request: Request) -> JSONResponse:
     try:
         data = await request.json()
-    except Exception:
-        return JSONResponse({
-            "ok": False,
-            "error": {"message": "Invalid JSON body"}
-        }, status_code=400)
-
-    # Validation
-    errors = validate_data(data)
-    if errors:
-        return JSONResponse({
-            "ok": False,
-            "error": {
-                "message": "Validation failed",
-                "details": errors
-            }
-        }, status_code=422)
-
-    # Create resource...
+    except ValueError:
+        return JSONResponse({"error": "Invalid JSON"}, status_code=400)
+    if not isinstance(data, dict) or not isinstance(data.get("name"), str):
+        return JSONResponse({"error": "name must be a string"}, status_code=422)
+    return JSONResponse({"name": data["name"]})
 ```
+
+Read query strings with `request.query_params`, headers with `request.headers`, and cookies with `request.cookies`. Validate numeric query parameters rather than assuming conversion will succeed.
+
+### Forms and uploads
+
+```python
+# Add this method inside your API class.
+@API.endpoint("POST", "/upload")
+async def upload(self, request: Request) -> JSONResponse:
+    async with request.form() as form:
+        file = form.get("file")
+        if not hasattr(file, "read"):
+            return JSONResponse({"error": "A file is required"}, status_code=422)
+        first_chunk = await file.read(1024)
+        return JSONResponse({"filename": file.filename, "bytes_read": len(first_chunk)})
+```
+
+The context manager closes temporary upload files. This example reads only a small prefix; implement your application's storage, file checks, and request-size policy separately.
+
+When CSRF is enabled, unsafe requests using a session cookie need a valid token. Form-token bodies are replayed to handlers with a default 8 MiB buffer limit; send `X-CSRF-Token` for uploads that should avoid CSRF buffering. API paths are not automatically exempt. See [Security](security.md).
+
+## Responses and errors
+
+Import response classes from `z8ter.responses`: `JSONResponse`, `Response`, `HTMLResponse`, `PlainTextResponse`, `RedirectResponse`, `FileResponse`, and `StreamingResponse`.
+
+Returning a Python dict directly is not automatically converted to JSON. Response envelopes such as `{"ok": true, "data": ...}` are an application convention, not a framework requirement.
+
+Use explicit `JSONResponse(..., status_code=...)` for a stable API error shape. You may also raise `starlette.exceptions.HTTPException`; `builder.use_errors()` installs Z8ter's error handlers, whose rendering depends on the request. Unexpected exceptions should not expose internal details in production.
 
 ## Authentication
 
-### Accessing the Current User
+Authentication requires [registered repositories and middleware](authentication.md). To return JSON instead of a login redirect:
 
 ```python
+# Add this method inside your API class.
 @API.endpoint("GET", "/me")
-async def get_current_user(self, request: Request):
+async def me(self, request: Request) -> JSONResponse:
     user = getattr(request.state, "user", None)
-
     if not user:
-        return JSONResponse({
-            "ok": False,
-            "error": {"message": "Not authenticated"}
-        }, status_code=401)
-
-    return JSONResponse({
-        "ok": True,
-        "data": user
-    })
+        return JSONResponse({"error": "Authentication required"}, status_code=401)
+    return JSONResponse({"id": user["id"], "name": user.get("name")})
 ```
 
-### Protected Endpoints
+Return an explicit set of public fields rather than serializing credentials. Authenticate webhook or bearer-token endpoints with their own checks before deciding whether a CSRF exemption is appropriate.
 
-```python
-from functools import wraps
+## Application services
 
-def require_auth(func):
-    @wraps(func)
-    async def wrapper(self, request: Request):
-        user = getattr(request.state, "user", None)
-        if not user:
-            return JSONResponse({
-                "ok": False,
-                "error": {"message": "Authentication required"}
-            }, status_code=401)
-        return await func(self, request)
-    return wrapper
+Services you register are available through `request.app.state.services`; repositories are also exposed on application state by the auth builder. Z8ter does not create a general-purpose asynchronous `database.fetch_all()` service. Use the API of your configured storage integration and offload synchronous I/O as needed.
 
+## Next steps
 
-class SecureAPI(API):
-    @API.endpoint("GET", "/secret")
-    @require_auth
-    async def secret_data(self, request: Request):
-        return JSONResponse({
-            "ok": True,
-            "data": {"secret": "value"}
-        })
-```
-
-## Accessing Services
-
-Access application services via `request.app.state.services`:
-
-```python
-@API.endpoint("GET", "/")
-async def list_items(self, request: Request):
-    # Access registered services
-    services = request.app.state.services
-    config = services.get("config")
-    db = services.get("database")
-
-    items = await db.fetch_all("SELECT * FROM items")
-    return JSONResponse({"ok": True, "data": items})
-```
-
-## Complete Example
-
-```python
-from z8ter.endpoints.api import API
-from z8ter.requests import Request
-from z8ter.responses import JSONResponse
-
-
-class Tasks(API):
-    """Task management API"""
-
-    @API.endpoint("GET", "/")
-    async def list_tasks(self, request: Request):
-        """List all tasks with optional filtering"""
-        status = request.query_params.get("status")
-        page = int(request.query_params.get("page", 1))
-        limit = int(request.query_params.get("limit", 20))
-
-        tasks = await self._get_tasks(status, page, limit)
-        total = await self._count_tasks(status)
-
-        return JSONResponse({
-            "ok": True,
-            "data": tasks,
-            "meta": {
-                "total": total,
-                "page": page,
-                "limit": limit
-            }
-        })
-
-    @API.endpoint("POST", "/")
-    async def create_task(self, request: Request):
-        """Create a new task"""
-        data = await request.json()
-
-        # Validate
-        if not data.get("title"):
-            return JSONResponse({
-                "ok": False,
-                "error": {"message": "Title is required"}
-            }, status_code=400)
-
-        task = await self._create_task(data)
-
-        return JSONResponse({
-            "ok": True,
-            "data": task
-        }, status_code=201)
-
-    @API.endpoint("GET", "/{task_id:int}")
-    async def get_task(self, request: Request):
-        """Get a specific task"""
-        task_id = request.path_params["task_id"]
-        task = await self._get_task(task_id)
-
-        if not task:
-            return JSONResponse({
-                "ok": False,
-                "error": {"message": "Task not found"}
-            }, status_code=404)
-
-        return JSONResponse({
-            "ok": True,
-            "data": task
-        })
-
-    @API.endpoint("PATCH", "/{task_id:int}")
-    async def update_task(self, request: Request):
-        """Update a task"""
-        task_id = request.path_params["task_id"]
-        data = await request.json()
-
-        task = await self._update_task(task_id, data)
-        if not task:
-            return JSONResponse({
-                "ok": False,
-                "error": {"message": "Task not found"}
-            }, status_code=404)
-
-        return JSONResponse({
-            "ok": True,
-            "data": task
-        })
-
-    @API.endpoint("DELETE", "/{task_id:int}")
-    async def delete_task(self, request: Request):
-        """Delete a task"""
-        task_id = request.path_params["task_id"]
-        deleted = await self._delete_task(task_id)
-
-        if not deleted:
-            return JSONResponse({
-                "ok": False,
-                "error": {"message": "Task not found"}
-            }, status_code=404)
-
-        return JSONResponse({
-            "ok": True,
-            "message": "Task deleted"
-        })
-
-    # Helper methods
-    async def _get_tasks(self, status, page, limit):
-        # Database query...
-        pass
-
-    async def _count_tasks(self, status):
-        # Count query...
-        pass
-
-    async def _get_task(self, task_id):
-        # Fetch single task...
-        pass
-
-    async def _create_task(self, data):
-        # Insert task...
-        pass
-
-    async def _update_task(self, task_id, data):
-        # Update task...
-        pass
-
-    async def _delete_task(self, task_id):
-        # Delete task...
-        pass
-```
-
-## Next Steps
-
-- [React Components](react-components.md) - Build interactive frontends
-- [Authentication](authentication.md) - Secure your APIs
-- [Configuration](configuration.md) - Configure your application
+- [Views & Pages](views.md)
+- [Authentication](authentication.md)
+- [Interactive Islands](react-components.md)

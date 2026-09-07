@@ -1,26 +1,30 @@
 {
   "devDependencies": {
-    "@tailwindcss/cli": "^4.1.12",
-    "@types/node": "^24.3.0",
+    "@tailwindcss/cli": "^4.3.3",
+    "@types/node": "^24.13.3",
     "concurrently": "^8.2.2",
-    "daisyui": "^5.0.50",
-    "tailwindcss": "^4.1.12",
-    "typescript": "^5.9.2",
-    "vite": "^7.1.7",
-    "vite-plugin-solid": "^2.11.8"
+    "daisyui": "^5.7.28",
+    "tailwindcss": "^4.3.3",
+    "typescript": "^5.9.3",
+    "vite": "^7.3.6",
+    "vite-plugin-solid": "^2.11.14"
   },
   "scripts": {
     "dev:css": "npx @tailwindcss/cli -i src/css/app.css -o static/css/output.css -w",
     "dev:js": "vite build --watch",
     "dev:server": "z8 run dev",
     "dev": "concurrently -n css,js,server -c green,blue,magenta \"npm:dev:css\" \"npm:dev:js\" \"npm:dev:server\"",
-    "typecheck": "tsc -w",
+    "typecheck": "tsc --noEmit",
     "build:css": "npx @tailwindcss/cli -i src/css/app.css -o static/css/output.css",
     "build:js": "vite build",
-    "build": "npm run build:css && npm run build:js"
+    "build": "npm run build:css && npm run build:js",
+    "typecheck:watch": "tsc --noEmit --watch"
   },
   "dependencies": {
-    "solid-element": "^1.9.1",
-    "solid-js": "^1.9.9"
+    "solid-element": "^1.9.2",
+    "solid-js": "^1.9.15"
+  },
+  "engines": {
+    "node": "^20.19.0 || >=22.12.0"
   }
 }

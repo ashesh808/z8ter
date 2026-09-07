@@ -40,7 +40,7 @@ services:
 
   # Development only: Vite dev server for frontend hot-reload
   vite:
-    image: node:20-alpine
+    image: node:22-alpine
     working_dir: /app
     command: npm run dev -- --host 0.0.0.0
     ports:

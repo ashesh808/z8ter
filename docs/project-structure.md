@@ -1,226 +1,111 @@
 # Project Structure
 
-Z8ter uses a convention-based project structure that keeps your code organized and enables automatic route discovery.
+The packaged `z8 new` starter uses the following directories. Authentication routes, domain services, and extra APIs are application additions, not automatically generated features.
 
-## Standard Layout
-
-```
+```text
 myapp/
-├── .env                        # Environment configuration
-├── main.py                     # Application entry point
-├── requirements.txt            # Python dependencies
-├── package.json                # Node.js dependencies
-├── vite.config.ts              # Vite build configuration
-├── tsconfig.json               # TypeScript configuration
-│
-├── endpoints/                  # HTTP endpoint handlers
-│   ├── views/                  # SSR page views
-│   │   ├── __init__.py
-│   │   ├── index.py            # → /
-│   │   ├── about.py            # → /about
-│   │   ├── login.py            # → /login
-│   │   └── app/                # Nested routes
-│   │       ├── __init__.py
-│   │       └── dashboard.py    # → /app/dashboard
-│   │
-│   └── api/                    # REST API endpoints
-│       ├── __init__.py
-│       ├── hello.py            # → /api/hello/*
-│       ├── users.py            # → /api/users/*
-│       └── auth.py             # → /api/auth/*
-│
-├── templates/                  # Jinja2 templates
-│   ├── base.jinja              # Base layout template
-│   ├── pages/                  # Page-specific templates
-│   │   ├── index.jinja
-│   │   ├── about.jinja
-│   │   └── app/
-│   │       └── dashboard.jinja
-│   └── server-components/      # Reusable template components
-│       ├── general.jinja
-│       └── islands.jinja
-│
-├── content/                    # YAML/JSON page content
-│   ├── index.yaml
-│   ├── about.yaml
-│   └── app/
-│       └── dashboard.yaml
-│
-├── static/                     # Static assets (served at /static)
-│   ├── favicon/
-│   ├── css/
-│   └── js/                     # Vite build output
-│       └── .vite/
-│           └── manifest.json
-│
-├── src/                        # Frontend source code
-│   ├── css/
-│   │   └── app.css             # Tailwind/CSS entry
-│   └── ts/
-│       ├── app.ts              # TypeScript entry point
-│       ├── pages/              # Page-specific JS modules
-│       │   ├── common.ts
-│       │   ├── index.ts
-│       │   └── app/
-│       │       └── dashboard.ts
-│       ├── ui-components/      # React Web Components
-│       │   ├── z8-clock.tsx
-│       │   └── z8-theme-toggle.tsx
-│       └── utils/              # Shared utilities
-│           └── theme.ts
-│
-└── app/                        # Application logic (optional)
-    ├── identity/               # Domain: user identity
-    │   ├── adapter/            # Repository implementations
-    │   │   ├── session_repo.py
-    │   │   └── user_repo.py
-    │   └── usecases/           # Business logic
-    │       ├── manage_sessions.py
-    │       └── manage_users.py
-    └── billing/                # Domain: billing
-        └── ...
+  main.py                         # app_builder, app, and asgi_app
+  pyproject.toml                  # uv/Python project
+  requirements.txt                # pip-compatible dependencies
+  package.json
+  package-lock.json
+  vite.config.ts
+  tsconfig.json
+  endpoints/
+    views/
+      index.py                    # /
+      about.py                    # /about
+    api/
+      hello.py                    # /api/hello/
+  templates/
+    base.jinja
+    pages/
+      index.jinja
+      about.jinja
+    server-components/            # Jinja macros
+  content/
+    index.yaml
+    about.yaml
+  src/
+    css/app.css                   # Tailwind entry
+    ts/
+      app.ts                      # Page module loader
+      pages/
+        index.ts
+        about.ts
+      ui-components/              # Solid custom elements
+      utils/
+  static/
+    css/output.css                # Tailwind output
+    js/.vite/manifest.json        # Vite manifest
+    js/assets/                    # Built JS assets
+  Dockerfile
+  docker-compose.yml
 ```
 
-## Directory Details
+## Views and routes
 
-### `/endpoints/views/`
+The default builder scans `endpoints.views` for `View` subclasses. A Python file without a `View` class does not become a page route.
 
-Server-side rendered page views. Each Python file becomes a route:
-
-| File | URL |
-|------|-----|
-| `index.py` | `/` |
-| `about.py` | `/about` |
-| `login.py` | `/login` |
-| `app/dashboard.py` | `/app/dashboard` |
-
-Files named `index.py` map to the parent directory's URL.
-
-### `/endpoints/api/`
-
-REST API endpoints. Each file creates an API mount:
-
-| File | Base URL |
-|------|----------|
-| `hello.py` | `/api/hello` |
-| `users.py` | `/api/users` |
-| `auth.py` | `/api/auth` |
-
-Individual routes within the API class extend from this base.
-
-### `/templates/`
-
-Jinja2 templates for rendering HTML:
-
-- `base.jinja`: The root template that others extend
-- `pages/`: Page-specific templates, mirroring the views structure
-- `server-components/`: Reusable template fragments (macros, includes)
-
-### `/content/`
-
-Structured content for pages in YAML or JSON format:
-
-```yaml
-# content/about.yaml
-title: About Us
-hero:
-  heading: Our Story
-  subheading: Building the future of web development
-sections:
-  - title: Our Mission
-    content: ...
+```text
+endpoints/views/index.py             → /
+endpoints/views/about.py             → /about
+endpoints/views/products/index.py    → /products
+endpoints/views/products/detail.py   → /products/detail
 ```
 
-Content is automatically loaded and available as `page_content` in templates.
+A view's `path` class attribute can override its URL, including Starlette path parameters. Its template filename is selected explicitly in `self.render()`; it is not inferred from the URL.
 
-### `/static/`
+## API classes
 
-Static files served at `/static/`. Includes:
+The default builder scans `endpoints.api` for `API` subclasses. Module paths determine mount paths, and `@API.endpoint` defines paths inside each mount:
 
-- Favicon files
-- Pre-built CSS
-- Vite build output (`/js/.vite/manifest.json`)
-- Images and other assets
+```text
+endpoints/api/hello.py               → /api/hello
+endpoints/api/admin/reports.py       → /api/admin/reports
+```
 
-### `/src/`
+A decorator path of `"/"` gives an endpoint with a trailing slash. See [API Endpoints](api-endpoints.md) for the shared-instance contract and custom routing.
 
-Frontend source code processed by Vite:
+## Templates and page content
 
-- `ts/app.ts`: Main entry point, handles page module loading
-- `ts/pages/`: Page-specific TypeScript (loaded based on `data-page` attribute)
-- `ts/ui-components/`: React components wrapped as Web Components
-- `css/app.css`: Tailwind CSS entry point
+`templates/base.jinja` provides the outer HTML. Page templates normally extend it, and `server-components` contains reusable Jinja macros.
 
-### `/app/` (Optional)
+`View.render()` derives a `page_id` from the view module. For `endpoints.views.app.dashboard`, the ID is `app.dashboard`; content is looked up as `content/app/dashboard.json`, `.yaml`, then `.yml`. The first existing format wins. Missing content gives an empty `page_content` mapping; malformed content raises an error.
 
-Business logic organized by domain. This follows clean architecture principles:
+The generated layout puts `data-page="{{ page_id }}"` on **body**. The TypeScript entry reads that attribute, converts dots to directories, and imports the matching file under `src/ts/pages`.
 
-- `adapter/`: Repository implementations (database, external services)
-- `usecases/`: Business logic and use cases
+## Frontend files
 
-## File Naming Conventions
+The generated starter uses Solid and `solid-element`, with `vite-plugin-solid`. It does not use React by default. Import custom elements from the page module that needs them; an optional `pages/common.ts` can hold imports needed across pages.
 
-### Views
+Vite builds JavaScript into `static/js`; Tailwind separately builds `static/css/output.css`. The `/static` mount is added only when that directory exists. See [Interactive Islands](react-components.md).
 
-| Pattern | Example | URL |
-|---------|---------|-----|
-| `{name}.py` | `about.py` | `/about` |
-| `index.py` | `users/index.py` | `/users` |
-| `{name}.py` in subdir | `users/profile.py` | `/users/profile` |
+## Application logic
 
-### Templates
+You may add an `app/` directory for domain logic, repositories, or services. Its shape is your application's choice; Z8ter does not discover or register all service objects automatically.
 
-Templates should mirror the view structure:
-- View: `endpoints/views/about.py`
-- Template: `templates/pages/about.jinja`
-
-### Content
-
-Content files should match the `page_id`:
-- View module: `endpoints.views.about`
-- Content: `content/about.yaml`
-
-## Path Resolution
-
-Z8ter resolves paths based on the app directory:
+## Path resolution
 
 ```python
+from pathlib import Path
 import z8ter
 
-# Set app directory explicitly
-z8ter.set_app_dir("/path/to/myapp")
-
-# Or rely on defaults:
-# 1. Explicit set_app_dir()
-# 2. Z8TER_APP_DIR environment variable
-# 3. Current working directory
-
-# Access resolved paths
-print(z8ter.BASE_DIR)       # /path/to/myapp
-print(z8ter.VIEWS_DIR)      # /path/to/myapp/endpoints/views
-print(z8ter.TEMPLATES_DIR)  # /path/to/myapp/templates
-print(z8ter.STATIC_PATH)    # /path/to/myapp/static
-print(z8ter.API_DIR)        # /path/to/myapp/endpoints/api
-print(z8ter.TS_DIR)         # /path/to/myapp/src/ts
+z8ter.set_app_dir(Path("/absolute/path/to/myapp"))
+print(z8ter.BASE_DIR)
+print(z8ter.VIEWS_DIR)
+print(z8ter.TEMPLATES_DIR)
+print(z8ter.STATIC_PATH)
+print(z8ter.API_DIR)
+print(z8ter.TS_DIR)
 ```
 
-## Customizing Structure
+The app root uses an explicit `set_app_dir()` value first, then `Z8TER_APP_DIR`, then the working directory. The CLI sets it to the current working directory.
 
-While Z8ter works best with conventions, you can customize paths:
+Low-level `build_routes_from_pages(package_or_path)` and `build_routes_from_apis(package_or_path)` accept custom scan roots. To use them, compose the resulting routes yourself; calling them does not change the default `AppBuilder` scan directories. Ensure custom modules can be imported.
 
-```python
-from z8ter.route_builders import build_routes_from_pages, build_routes_from_apis
+## Next steps
 
-# Use custom view directory
-routes = build_routes_from_pages("myviews")  # Package name
-routes = build_routes_from_pages("src/views")  # Filesystem path
-
-# Use custom API directory
-mounts = build_routes_from_apis("myapis")
-```
-
-## Next Steps
-
-- [Views & Pages](views.md) - Create SSR pages
-- [API Endpoints](api-endpoints.md) - Build REST APIs
-- [React Components](react-components.md) - Add interactive elements
+- [Views & Pages](views.md)
+- [API Endpoints](api-endpoints.md)
+- [CLI Reference](cli.md)

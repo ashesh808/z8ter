@@ -12,20 +12,23 @@ modes:
 
 Notes:
 - The CLI sets the app directory to `z8ter.BASE_DIR` so imports work.
-- We pass `factory=True` and point to the configured app factory.
+- The default factory reuses a built app or builds a legacy builder-only app.
 - Logging uses `z8ter.logging_utils.uvicorn_log_config`.
 - For Docker/containers, use mode="WAN" or set host="0.0.0.0" explicitly.
 
 Environment variables:
-- Z8TER_APP_FACTORY: Override the app factory path (default: "main:app_builder.build")
+- Z8TER_APP_FACTORY: Override the app factory path.
+- Z8TER_DEBUG: Override the debug default selected by the run mode.
 
 """
 
+import importlib
 import logging
 import os
 import socket
 
 import uvicorn
+from starlette.types import ASGIApp
 
 import z8ter
 from z8ter.logging_utils import uvicorn_log_config
@@ -33,7 +36,21 @@ from z8ter.logging_utils import uvicorn_log_config
 logger = logging.getLogger("z8ter.cli")
 
 # Default app factory path - can be overridden via environment variable
-DEFAULT_APP_FACTORY = "main:app_builder.build"
+DEFAULT_APP_FACTORY = "z8ter.cli.run_server:load_app"
+
+
+def load_app() -> ASGIApp:
+    """Load the configured app without consuming its builder a second time.
+
+    New scaffolds expose an already-built ASGI app. Older projects may expose
+    only ``app_builder``; build those once when Uvicorn starts its worker.
+    """
+    module = importlib.import_module("main")
+    for name in ("asgi_app", "app"):
+        app = getattr(module, name, None)
+        if callable(app):
+            return app
+    return module.app_builder.build()
 
 
 def run_server(
@@ -56,7 +73,7 @@ def run_server(
         port: TCP port to listen on.
         reload: Force code reload. If None, defaults to True in dev, False in prod.
         app_factory: App factory path (e.g., "main:app_builder.build").
-                     Defaults to Z8TER_APP_FACTORY env var or "main:app_builder.build".
+                     Defaults to Z8TER_APP_FACTORY or automatic loading from main.
 
     Security:
         - "WAN" binds to 0.0.0.0. Do not expose in untrusted networks
@@ -93,6 +110,8 @@ def run_server(
 
     is_prod = mode == "prod"
     is_dev = not is_prod
+    # Set the default before main.py is imported by the Uvicorn worker.
+    os.environ.setdefault("Z8TER_DEBUG", "true" if is_dev else "false")
     # If reload not specified, enable in dev-like modes, disable in prod.
     reload = is_dev if reload is None else reload
 
@@ -106,13 +125,16 @@ def run_server(
     elif mode == "prod":
         host = "127.0.0.1"
         reload = False
-        logger.info("[PROD] Binding to %s:%d (reload=%s) - use WAN mode for Docker", host, port, reload)
+        logger.info(
+            "[PROD] Binding to %s:%d (reload=%s) - use WAN mode for Docker",
+            host,
+            port,
+            reload,
+        )
     else:
         logger.info("[DEV] Binding to %s:%d (reload=%s)", host, port, reload)
 
-    # Start Uvicorn with an app factory. Your main.py must expose:
-    #   def app_builder() -> AppBuilder: ...
-    #   and app_builder.build() must be a callable returning ASGI app.
+    # A module-level factory also works in reload subprocesses.
     try:
         uvicorn.run(
             app_factory,

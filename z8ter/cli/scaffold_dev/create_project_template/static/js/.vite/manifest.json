@@ -1,15 +1,22 @@
 {
   "src/ts/app.ts": {
-    "file": "assets/app-QBJ_Meim.js",
+    "file": "assets/app-DP8Vhz0F.js",
     "name": "app",
     "src": "src/ts/app.ts",
     "isEntry": true,
     "dynamicImports": [
+      "src/ts/pages/about.ts",
       "src/ts/pages/index.ts"
     ]
   },
+  "src/ts/pages/about.ts": {
+    "file": "assets/about-M7LxuyN4.js",
+    "name": "about",
+    "src": "src/ts/pages/about.ts",
+    "isDynamicEntry": true
+  },
   "src/ts/pages/index.ts": {
-    "file": "assets/index-DsZ53cdY.js",
+    "file": "assets/index-ByYTkQeJ.js",
     "name": "index",
     "src": "src/ts/pages/index.ts",
     "isDynamicEntry": true

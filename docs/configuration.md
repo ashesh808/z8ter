@@ -1,120 +1,107 @@
 # Configuration
 
-Z8ter uses environment-based configuration with support for `.env` files, making it easy to manage settings across different environments.
+Z8ter exposes a callable configuration service backed by Starlette Config. Builder methods queue setup; services become available after `builder.build()`.
 
-## Environment Files
+## Upgrading to 0.3.1
 
-Create a `.env` file in your project root:
+Z8ter 0.3.1 requires `starlette>=1.6,<2.0`; 0.3.0 used a pre-1.0 Starlette range. Upgrade Z8ter and resolve its dependencies together rather than retaining an old Starlette pin. Form-token CSRF requests now preserve the body for handlers and enforce an 8 MiB default buffer limit; configure `max_form_body_size` or use a header token for larger streaming uploads.
 
-```env
-# .env
-DEBUG=true
-SECRET_KEY=your-super-secret-key-change-in-production
-
-# Database
-DATABASE_URL=postgresql://user:pass@localhost/mydb
-
-# Authentication
-LOGIN_PATH=/login
-APP_PATH=/app/dashboard
-SESSION_TTL=2592000
-
-# External Services
-SMTP_HOST=smtp.example.com
-SMTP_PORT=587
-SMTP_USER=noreply@example.com
-SMTP_PASSWORD=secret
-
-# Vite (development)
-VITE_DEV_SERVER=http://localhost:5173
-```
-
-## Loading Configuration
-
-### Using the Builder
+## Load and read configuration
 
 ```python
 from z8ter.builders.app_builder import AppBuilder
 
 builder = AppBuilder()
-builder.use_config(".env")  # Load from .env file
-# ...
-app = builder.build(debug=True)
+builder.use_config(".env")
+builder.use_templating()
+builder.use_vite()
+app = builder.build(debug=False)
+asgi_app = app.starlette_app
+
+config = app.state.services["config"]
+app_name = config("APP_NAME", default="My app")
+port = config("PORT", cast=int, default=8000)
 ```
 
-### Accessing Configuration
+Inside a handler, use `request.app.state.services["config"]`. For ordinary keys, process environment variables override the selected `.env` file, followed by a supplied default. A missing key without a default raises `KeyError`; a missing `.env` file is allowed.
 
-Configuration is available as a service:
+The special `BASE_DIR` key uses a process environment override or Z8ter's resolved app directory. Set the actual project root with `z8ter.set_app_dir(...)` or `Z8TER_APP_DIR`; changing the config value alone does not relocate project files.
+
+### Types and validation
 
 ```python
-# In views or API endpoints
-async def get(self, request: Request) -> Response:
-    config = request.app.state.services["config"]
+from starlette.datastructures import CommaSeparatedStrings
 
-    # Get a value (raises KeyError if missing)
-    secret = config("SECRET_KEY")
-
-    # Get with default
-    debug = config("DEBUG", default=False)
-
-    # Cast to type
-    port = config("PORT", cast=int, default=8000)
-    debug = config("DEBUG", cast=bool, default=False)
+feature_enabled = config("FEATURE_ENABLED", cast=bool, default=False)
+allowed_hosts = config("ALLOWED_HOSTS", cast=CommaSeparatedStrings, default="localhost")
+secret_key = config("APP_SESSION_KEY")
+if len(secret_key) < 32:
+    raise ValueError("APP_SESSION_KEY must contain at least 32 characters")
 ```
 
-### Type Casting
+Boolean casting accepts the strings `true`, `1`, `false`, and `0`, ignoring case. Choose defaults and validate required application settings explicitly. Defining a setting such as `ALLOWED_HOSTS` does not install middleware that uses it.
 
-The config function supports automatic type casting:
+## Framework settings
+
+- `APP_SESSION_KEY`: signing key used by application sessions and, unless explicitly overridden, CSRF protection. App-session setup requires at least 32 characters.
+- `LOGIN_PATH`: destination used by `login_required`; define it when using the guard.
+- `APP_PATH`: destination used by `skip_if_authenticated`; define it when using the guard.
+- `EMAIL_PROVIDER`: `console` by default, or `smtp`, when `use_email()` is enabled.
+- `EMAIL_FROM`: default sender for the email service.
+- `SMTP_HOST`, `SMTP_PORT`, `SMTP_USERNAME`, `SMTP_PASSWORD`, `SMTP_USE_TLS`, `SMTP_USE_SSL`: settings read by the SMTP builder. Defaults are port 587, STARTTLS enabled, implicit SSL disabled.
+
+```dotenv
+APP_SESSION_KEY=replace-with-a-generated-private-key
+LOGIN_PATH=/login
+APP_PATH=/app/dashboard
+EMAIL_PROVIDER=console
+EMAIL_FROM=noreply@example.com
+```
+
+Session lifetime and cookie security are arguments to `SessionManager`, not automatic `SESSION_TTL` or `SESSION_COOKIE_SECURE` environment settings. See [Authentication](authentication.md).
+
+### Settings read directly from the process environment
+
+These are separate from the callable config service:
+
+- `Z8TER_APP_DIR`: fallback project root when `set_app_dir()` has not been called.
+- `Z8TER_DEBUG`: `AppBuilder.build()` uses `true` when no explicit `debug` argument is supplied. An explicit argument wins. The 0.3.1 CLI sets a default before importing `main.py`: false in prod, true in dev/LAN/WAN, while preserving an explicit environment value. Direct Uvicorn startup follows the debug choice in `main.py`.
+- `Z8TER_MODE`: the core app's `dev`, `prod`, or `test` mode; this is separate from Uvicorn's reload flag.
+- `Z8TER_APP_FACTORY`: optional override for the CLI ASGI factory import path. In 0.3.1 the default loader reuses `main.asgi_app`, then `main.app`, and falls back to `main.app_builder.build()` only if neither built callable is present.
+- `DATABASE_URL`: read by `Database()` and database CLI commands when no explicit URL is supplied.
+- `VITE_DEV_SERVER`: optional Vite asset server URL, read when `z8ter.vite` is imported.
+- `VITE_ALWAYS_RELOAD_MANIFEST`: `true` disables manifest caching, also read at import.
+
+`use_config(".env")` reads values through the service; it does not export them into `os.environ`. Export process settings before launching Python, or explicitly pass config values to the relevant constructor. `PORT` and `HOST` are not interpreted by `z8 run`; use Uvicorn arguments or `run_server(port=...)` instead.
+
+## SQLite and other databases
+
+The built-in `Database`, `SQLiteUserRepo`, and `SQLiteSessionRepo` support SQLite. PostgreSQL, Redis, and other stores require your own integrations/repositories; declaring a URL or pool setting does not install a driver.
+
+Use an explicit absolute path to avoid ambiguous SQLite URL handling:
 
 ```python
-# String (default)
-name = config("APP_NAME")
+from pathlib import Path
+from z8ter.database import Database, init_database
 
-# Integer
-port = config("PORT", cast=int)
-
-# Boolean (accepts: true, 1, yes, on)
-debug = config("DEBUG", cast=bool)
-
-# Float
-rate = config("TAX_RATE", cast=float)
-
-# List (comma-separated)
-from starlette.config import CommaSeparatedStrings
-hosts = config("ALLOWED_HOSTS", cast=CommaSeparatedStrings)
-
-# Custom cast function
-def parse_json(value):
-    import json
-    return json.loads(value)
-
-data = config("JSON_CONFIG", cast=parse_json)
+path = Path("data/app.db").resolve()
+database_url = f"sqlite:///{path.as_posix()}"
+db = init_database(url=database_url)
 ```
 
-## Configuration Best Practices
+The current parser treats `sqlite:///data/app.db` as `/data/app.db`. An absolute path assembled as above yields four slashes on Unix. `sqlite:///:memory:` is supported, but connections are thread-local: use a temporary file database for tests that cross threads.
 
-### 1. Use Different Files per Environment
+## Frontend development and production
 
-```
-.env              # Default/development
-.env.production   # Production overrides
-.env.test         # Test overrides
-```
+The generated starter uses Vite build-watch and a separate Tailwind CSS watcher. Its `npm run dev` starts those watchers and the Python server; it does not start a Vite HMR server. Leave `VITE_DEV_SERVER` unset for this workflow.
 
-Load the appropriate file:
+If you deliberately run a Vite dev server, export its URL before starting Python. Production uses `static/js/.vite/manifest.json`; build the assets with `npm run build` and leave `VITE_DEV_SERVER` unset. A missing manifest or entry produces an error; a configured dev server is not automatically replaced by the production manifest if unavailable.
 
-```python
-import os
+## Environments and secrets
 
-env = os.getenv("APP_ENV", "development")
-env_file = f".env.{env}" if env != "development" else ".env"
+Choose the config filename explicitly, for example `builder.use_config(".env.production")`. Z8ter does not merge multiple environment files automatically.
 
-builder.use_config(env_file)
-```
-
-### 2. Never Commit Secrets
-
-Add to `.gitignore`:
+Keep secrets out of version control:
 
 ```gitignore
 .env
@@ -122,290 +109,16 @@ Add to `.gitignore`:
 !.env.example
 ```
 
-Create `.env.example` with placeholder values:
+Generate a private key with:
 
-```env
-# .env.example - Copy to .env and fill in values
-DEBUG=true
-SECRET_KEY=change-me
-DATABASE_URL=postgresql://user:pass@localhost/mydb
+```bash
+python -c 'import secrets; print(secrets.token_hex(32))'
 ```
 
-### 3. Validate Required Settings
+Use distinct keys per environment. Enable [security middleware](security.md) and production cookie settings explicitly; a configuration file alone does not enable them.
 
-```python
-# config/settings.py
-from starlette.config import Config
+## Next steps
 
-config = Config(".env")
-
-# Required settings (will raise if missing)
-SECRET_KEY = config("SECRET_KEY")
-DATABASE_URL = config("DATABASE_URL")
-
-# Optional with defaults
-DEBUG = config("DEBUG", cast=bool, default=False)
-LOG_LEVEL = config("LOG_LEVEL", default="INFO")
-```
-
-### 4. Group Related Settings
-
-```python
-# config/database.py
-from starlette.config import Config
-
-config = Config(".env")
-
-DATABASE_URL = config("DATABASE_URL")
-DATABASE_POOL_SIZE = config("DATABASE_POOL_SIZE", cast=int, default=5)
-DATABASE_MAX_OVERFLOW = config("DATABASE_MAX_OVERFLOW", cast=int, default=10)
-```
-
-```python
-# config/auth.py
-from starlette.config import Config
-
-config = Config(".env")
-
-SECRET_KEY = config("SECRET_KEY")
-SESSION_TTL = config("SESSION_TTL", cast=int, default=86400 * 30)
-LOGIN_PATH = config("LOGIN_PATH", default="/login")
-APP_PATH = config("APP_PATH", default="/dashboard")
-```
-
-## Common Configuration Options
-
-### Application Settings
-
-```env
-# Application mode
-DEBUG=true
-APP_ENV=development
-
-# Server
-HOST=127.0.0.1
-PORT=8000
-
-# Security
-SECRET_KEY=your-secret-key-at-least-32-chars
-ALLOWED_HOSTS=localhost,127.0.0.1
-```
-
-### Authentication Settings
-
-```env
-# Session configuration
-SESSION_TTL=2592000
-SESSION_COOKIE_SECURE=true
-SESSION_COOKIE_HTTPONLY=true
-
-# Redirect paths
-LOGIN_PATH=/login
-APP_PATH=/app/dashboard
-LOGOUT_REDIRECT=/
-```
-
-### Database Settings
-
-```env
-# PostgreSQL
-DATABASE_URL=postgresql://user:password@localhost:5432/mydb
-
-# SQLite
-DATABASE_URL=sqlite:///./data/app.db
-
-# Connection pool
-DATABASE_POOL_SIZE=5
-DATABASE_MAX_OVERFLOW=10
-DATABASE_POOL_TIMEOUT=30
-```
-
-### Email Settings
-
-```env
-SMTP_HOST=smtp.gmail.com
-SMTP_PORT=587
-SMTP_USER=your-email@gmail.com
-SMTP_PASSWORD=your-app-password
-SMTP_USE_TLS=true
-EMAIL_FROM=noreply@example.com
-```
-
-### External APIs
-
-```env
-# Stripe
-STRIPE_PUBLIC_KEY=pk_test_...
-STRIPE_SECRET_KEY=sk_test_...
-
-# AWS
-AWS_ACCESS_KEY_ID=AKIA...
-AWS_SECRET_ACCESS_KEY=...
-AWS_REGION=us-east-1
-AWS_S3_BUCKET=my-bucket
-```
-
-### Frontend/Vite
-
-```env
-# Development server URL (enables HMR)
-VITE_DEV_SERVER=http://localhost:5173
-
-# Or leave empty for production mode
-VITE_DEV_SERVER=
-```
-
-## App Directory Configuration
-
-Z8ter resolves the application root directory with this precedence:
-
-1. **Explicit**: `z8ter.set_app_dir("/path/to/app")`
-2. **Environment**: `Z8TER_APP_DIR` environment variable
-3. **Default**: Current working directory
-
-```python
-import z8ter
-
-# Explicitly set app directory
-z8ter.set_app_dir("/var/www/myapp")
-
-# Get current app directory
-print(z8ter.get_app_dir())
-
-# Access resolved paths
-print(z8ter.BASE_DIR)        # /var/www/myapp
-print(z8ter.TEMPLATES_DIR)   # /var/www/myapp/templates
-print(z8ter.STATIC_PATH)     # /var/www/myapp/static
-```
-
-## Runtime Configuration
-
-### Accessing Config in Code
-
-```python
-# endpoints/views/settings.py
-from z8ter.endpoints.view import View
-
-
-class Settings(View):
-    async def get(self, request: Request) -> Response:
-        config = request.app.state.services["config"]
-
-        return self.render(request, "pages/settings.jinja", {
-            "app_name": config("APP_NAME", default="My App"),
-            "debug_mode": config("DEBUG", cast=bool, default=False),
-        })
-```
-
-### Using Config in Startup
-
-```python
-# main.py
-from z8ter.builders.app_builder import AppBuilder
-
-builder = AppBuilder()
-builder.use_config(".env")
-
-# Access config before build
-# Note: Config is available after use_config()
-
-app = builder.build(debug=True)
-
-# After build, access via app.state
-config = app.state.services["config"]
-print(f"Running in {'debug' if config('DEBUG', cast=bool) else 'production'} mode")
-```
-
-## Environment-Specific Configuration
-
-### Development
-
-```env
-# .env (development)
-DEBUG=true
-DATABASE_URL=sqlite:///./dev.db
-VITE_DEV_SERVER=http://localhost:5173
-LOG_LEVEL=DEBUG
-```
-
-### Production
-
-```env
-# .env.production
-DEBUG=false
-DATABASE_URL=postgresql://user:pass@prod-db:5432/app
-VITE_DEV_SERVER=
-LOG_LEVEL=WARNING
-SESSION_COOKIE_SECURE=true
-```
-
-### Testing
-
-```env
-# .env.test
-DEBUG=true
-DATABASE_URL=sqlite:///:memory:
-VITE_DEV_SERVER=
-LOG_LEVEL=DEBUG
-```
-
-## Configuration Patterns
-
-### Factory Pattern
-
-```python
-# config/factory.py
-import os
-from starlette.config import Config
-
-
-def get_config():
-    env = os.getenv("APP_ENV", "development")
-
-    if env == "production":
-        return Config(".env.production")
-    elif env == "test":
-        return Config(".env.test")
-    else:
-        return Config(".env")
-```
-
-### Settings Class
-
-```python
-# config/settings.py
-from dataclasses import dataclass
-from starlette.config import Config
-
-
-@dataclass
-class Settings:
-    debug: bool
-    secret_key: str
-    database_url: str
-    session_ttl: int
-    login_path: str
-    app_path: str
-
-    @classmethod
-    def from_env(cls, env_file: str = ".env") -> "Settings":
-        config = Config(env_file)
-        return cls(
-            debug=config("DEBUG", cast=bool, default=False),
-            secret_key=config("SECRET_KEY"),
-            database_url=config("DATABASE_URL"),
-            session_ttl=config("SESSION_TTL", cast=int, default=2592000),
-            login_path=config("LOGIN_PATH", default="/login"),
-            app_path=config("APP_PATH", default="/dashboard"),
-        )
-
-
-# Usage
-settings = Settings.from_env()
-```
-
-## Next Steps
-
-- [CLI Reference](cli.md) - Command-line tools
-- [Getting Started](getting-started.md) - Quick start guide
-- [Authentication](authentication.md) - Auth configuration
+- [CLI Reference](cli.md)
+- [Authentication](authentication.md)
+- [Interactive Islands](react-components.md)

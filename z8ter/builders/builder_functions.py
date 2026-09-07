@@ -295,12 +295,14 @@ def use_csrf_builder(context: dict[str, Any]) -> None:
 
     exempt_paths = context.get("csrf_exempt_paths", [])
     cookie_secure = context.get("csrf_cookie_secure", True)
+    max_form_body_size = context.get("csrf_max_form_body_size", 8 * 1024 * 1024)
 
     app.starlette_app.add_middleware(
         CSRFMiddleware,
         secret_key=secret_key,
         exempt_paths=exempt_paths,
         cookie_secure=cookie_secure,
+        max_form_body_size=max_form_body_size,
     )
     state._z8_csrf_added = True
 

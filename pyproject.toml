@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "z8ter"
-version = "0.3.0"
+version = "0.3.1"
 description = "Lightweight full-stack async Python web framework built on Starlette designed for rapid development without compromising in UX"
 readme = "README.md"
 requires-python = ">=3.10"
@@ -28,11 +28,12 @@ classifiers = [
 dependencies = [
   "argon2-cffi>=25.1,<26",
   "starlette>=1.6,<2.0",
-  "jinja2>=3.1,<4",
+  "jinja2>=3.1.6,<4",
   "itsdangerous>=2.1,<3",
   "uvicorn>=0.30,<1.0",
   "rich>=13.7,<14",
   "pyyaml>=6.0,<7",
+  "python-multipart>=0.0.32,<0.1",
   "markupsafe>=2.1,<4"
 ]
 
@@ -83,6 +84,8 @@ z8ter = [
   "scaffold/**/*.pyc",
   "scaffold/**/*.pyo",
   "scaffold/**/.DS_Store",
+  "scaffold/**/.env",
+  "scaffold/**/.env.*",
   "scaffold/create_project_template/views/*",
   "scaffold/create_project_template/views/**/*"
 ]

@@ -185,5 +185,6 @@ def new_project(project_name: str, path: str | None = None) -> int:
     print(f"  cd {target}")
     print("  uv sync")
     print("  npm install")
-    print("  uv run z8 run dev")
+    print("  npm run build")
+    print("  uv run npm run dev")
     return RC_OK

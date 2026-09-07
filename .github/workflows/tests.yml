@@ -30,5 +30,37 @@ jobs:
       - name: Run unit tests
         run: python -m pytest -q
 
+      - name: Check dependency compatibility
+        run: python -m pip check
+
       - name: Verify package build
         run: python -m build
+
+      - name: Audit dependencies
+        if: matrix.python-version == '3.14'
+        run: python -m pip_audit --progress-spinner off
+
+  frontend:
+    name: Frontend (${{ matrix.directory }})
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        directory:
+          - z8ter-app
+          - z8ter/scaffold/create_project_template
+          - z8ter/cli/scaffold_dev/create_project_template
+    defaults:
+      run:
+        working-directory: ${{ matrix.directory }}
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v6
+        with:
+          node-version: '22'
+          cache: npm
+          cache-dependency-path: ${{ matrix.directory }}/package-lock.json
+      - run: npm ci
+      - run: npm run typecheck
+      - run: npm run build
+      - run: npm audit

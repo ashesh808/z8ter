@@ -18,15 +18,23 @@ import hmac
 import secrets
 from typing import Callable, Sequence
 
+from starlette.datastructures import Headers
+from starlette.exceptions import HTTPException
 from starlette.middleware.base import BaseHTTPMiddleware
+from starlette.middleware.body_limit import (
+    MAX_BODY_SIZE_SCOPE_KEY,
+    RequestBodyLimitMiddleware,
+)
 from starlette.requests import Request
 from starlette.responses import JSONResponse, Response
+from starlette.types import Receive, Scope, Send
 
 # Token settings
 CSRF_COOKIE_NAME = "z8_csrf"
 CSRF_HEADER_NAME = "X-CSRF-Token"
 CSRF_FORM_FIELD = "csrf_token"
 CSRF_TOKEN_LENGTH = 32
+CSRF_MAX_FORM_BODY_SIZE = 8 * 1024 * 1024
 
 
 def _generate_token() -> str:
@@ -52,6 +60,8 @@ class CSRFMiddleware(BaseHTTPMiddleware):
         exempt_paths: List of path prefixes to skip CSRF validation (e.g., /api/)
         cookie_secure: Whether to set Secure flag on cookie (default: True in prod)
         cookie_samesite: SameSite policy (default: "strict")
+        max_form_body_size: Maximum bytes buffered for a form token (default: 8 MiB).
+            Uploads using the X-CSRF-Token header are not buffered by this middleware.
 
     Usage:
         app.add_middleware(
@@ -68,12 +78,40 @@ class CSRFMiddleware(BaseHTTPMiddleware):
         exempt_paths: Sequence[str] | None = None,
         cookie_secure: bool = True,
         cookie_samesite: str = "strict",
+        max_form_body_size: int = CSRF_MAX_FORM_BODY_SIZE,
     ) -> None:
         super().__init__(app)
+        if max_form_body_size <= 0:
+            raise ValueError("max_form_body_size must be positive")
         self.secret_key = secret_key
         self.exempt_paths = list(exempt_paths or [])
         self.cookie_secure = cookie_secure
         self.cookie_samesite = cookie_samesite
+        self.max_form_body_size = max_form_body_size
+
+    async def __call__(self, scope: Scope, receive: Receive, send: Send) -> None:
+        """Bound form-token buffering while preserving streaming header uploads."""
+        if scope["type"] == "http":
+            headers = Headers(scope=scope)
+            content_type = headers.get("content-type", "")
+            if (
+                scope["method"] in ("POST", "PUT", "DELETE", "PATCH")
+                and not self._is_exempt(scope["path"])
+                and not headers.get(CSRF_HEADER_NAME)
+                and (
+                    "application/x-www-form-urlencoded" in content_type
+                    or "multipart/form-data" in content_type
+                )
+            ):
+                # Keep any stricter application-wide body limit in effect.
+                limit = min(
+                    self.max_form_body_size,
+                    scope.get(MAX_BODY_SIZE_SCOPE_KEY, self.max_form_body_size),
+                )
+                limited_app = RequestBodyLimitMiddleware(super().__call__, limit)
+                await limited_app(scope, receive, send)
+                return
+        await super().__call__(scope, receive, send)
 
     def _sign_token(self, token: str) -> str:
         """Create HMAC signature for token verification."""
@@ -124,16 +162,19 @@ class CSRFMiddleware(BaseHTTPMiddleware):
                 # Check form field if not in header
                 if not submitted_token:
                     content_type = request.headers.get("content-type", "")
-                    if "application/x-www-form-urlencoded" in content_type:
+                    if (
+                        "application/x-www-form-urlencoded" in content_type
+                        or "multipart/form-data" in content_type
+                    ):
                         try:
-                            form = await request.form()
-                            submitted_token = form.get(CSRF_FORM_FIELD)
-                        except Exception:
-                            pass
-                    elif "multipart/form-data" in content_type:
-                        try:
-                            form = await request.form()
-                            submitted_token = form.get(CSRF_FORM_FIELD)
+                            # BaseHTTPMiddleware replays a cached body to the
+                            # handler; form() alone consumes the request stream.
+                            await request.body()
+                            async with request.form() as form:
+                                submitted_token = form.get(CSRF_FORM_FIELD)
+                        except HTTPException as exc:
+                            if exc.status_code == 413:
+                                raise
                         except Exception:
                             pass
 

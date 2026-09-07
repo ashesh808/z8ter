@@ -1,6 +1,6 @@
 {
   "src/ts/app.ts": {
-    "file": "assets/app-kwAQDwL5.js",
+    "file": "assets/app-nnDplZhv.js",
     "name": "app",
     "src": "src/ts/app.ts",
     "isEntry": true,
@@ -14,7 +14,7 @@
     ]
   },
   "src/ts/pages/about.ts": {
-    "file": "assets/about-BXh1kKKP.js",
+    "file": "assets/about-BqCv2cnx.js",
     "name": "about",
     "src": "src/ts/pages/about.ts",
     "isDynamicEntry": true

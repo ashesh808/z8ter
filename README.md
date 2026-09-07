@@ -11,22 +11,29 @@
 ## Features
 
 - **File-based Routing** — Views under `endpoints/views/` map to routes automatically
-- **SSR + Islands** — Server-side rendering by default, with React "islands" for interactivity
+- **SSR + Islands** — Server-side rendering by default, with optional custom-element islands; the generated starter uses Solid
 - **Decorator-driven APIs** — Define REST APIs using decorators; auto-mounted under `/api/<name>`
 - **Pluggable Auth** — Session middleware, Argon2 password hashing, and route guards like `@login_required`
 - **SQLite Database** — Built-in SQLite persistence with session and user repositories
-- **Security Middleware** — CSRF protection, rate limiting, security headers out of the box
+- **Security Middleware** — Opt-in CSRF protection and rate limiting; the starter enables security headers
 - **Account Protection** — Account lockout plus signed password-reset and email-verification tokens
 - **Transactional Email** — Pluggable providers (console, SMTP) with async sending and Jinja templates
 - **Background Tasks** — In-process asyncio task manager with interval scheduling and session cleanup
 - **Testing Utilities** — In-memory repos and an email outbox for fast, dependency-free app tests
-- **Docker Ready** — Production-ready Dockerfile and docker-compose included
+- **Docker Ready** — Multi-stage Dockerfile and Compose configuration included
 - **Health Checks** — Built-in `/health` endpoint for container orchestration
 - **Composable Builder** — `AppBuilder` wires config, templating, Vite, sessions, and auth in order
 - **CLI Tooling** — Scaffold projects, pages, APIs, and manage databases with `z8` commands
-- **Modern Frontend** — Vite, React, TypeScript, Tailwind CSS, and DaisyUI ready out of the box
+- **Modern Frontend** — Vite 7, Solid, TypeScript, Tailwind CSS 4, and DaisyUI 5 in the generated starter
 
 ---
+
+## Current Release
+
+Version **0.3.1** fixes CSRF form handling, updates the generated starter, and
+refreshes dependencies. It requires **Starlette 1.6 or newer (below 2.0)**,
+where PyPI 0.3.0 supported Starlette below 1.0. Review your Starlette extensions
+and dependency pins when upgrading. See [release notes](CHANGELOG.md).
 
 ## Quickstart
 
@@ -35,35 +42,33 @@
 uvx --from z8ter z8 new myapp
 cd myapp
 
-# Initialize database
-z8 db init
-
 # Install dependencies
 uv sync              # Install Python dependencies
 npm install          # Install Node dependencies
 
-# Start the dev server
-uv run z8 run dev
+# Build assets, then start frontend watchers and the Python server
+npm run build
+uv run npm run dev
 ```
 
 <details>
 <summary>Alternative: Using pip instead of uv</summary>
 
 ```bash
-# Install the CLI into the active virtualenv first
-pip install z8ter
+# Create and activate an environment before installing the CLI
+python3 -m venv .z8ter-env
+source .z8ter-env/bin/activate  # Windows: .z8ter-env\Scripts\Activate.ps1
+python -m pip install z8ter
 z8 new myapp
 cd myapp
-python3 -m venv .venv
-source .venv/bin/activate  # Windows: .venv\Scripts\Activate.ps1
-pip install -r requirements.txt
+python -m pip install -r requirements.txt
 npm install
-z8 db init
-z8 run dev
+npm run build
+npm run dev
 ```
 </details>
 
-Visit `http://localhost:8000` to see your app.
+Visit `http://localhost:8000` to see your app. Database setup is optional for the basic starter. The frontend watchers rebuild assets; reload the browser after frontend changes.
 
 ---
 
@@ -83,7 +88,7 @@ uv add z8ter
 pip install z8ter
 
 # For development
-pip install z8ter[dev]
+pip install "z8ter[dev]"
 ```
 
 ---
@@ -96,7 +101,7 @@ myapp/
 ├── .env                    # Environment configuration
 ├── Dockerfile              # Production container
 ├── docker-compose.yml      # Local development setup
-├── data/                   # SQLite database (auto-created)
+├── data/                   # Optional application data directory
 │   └── app.db
 ├── endpoints/
 │   ├── views/              # SSR page views → URLs
@@ -109,9 +114,9 @@ myapp/
 │   └── pages/
 ├── content/                # YAML page content
 ├── static/                 # Static assets
-└── src/ts/                 # TypeScript/React code
+└── src/ts/                 # TypeScript/Solid code
     ├── app.ts
-    └── ui-components/      # React Web Components
+    └── ui-components/      # Solid custom elements
 ```
 
 ---
@@ -143,13 +148,17 @@ asgi_app = app.starlette_app  # For uvicorn
 
 ```python
 from z8ter.builders.app_builder import AppBuilder
-from z8ter.database import Database, SQLiteSessionRepo, SQLiteUserRepo, init_database
+from pathlib import Path
 
-# Initialize database
-db = init_database()
+from z8ter.config import build_config
+from z8ter.database import SQLiteSessionRepo, SQLiteUserRepo, init_database
 
-# Create repositories
-session_repo = SQLiteSessionRepo(db, secret_key=os.getenv("APP_SESSION_KEY"))
+config = build_config(".env")
+db_path = Path("data/app.db").resolve()
+db = init_database(url=f"sqlite:///{db_path.as_posix()}")
+
+# APP_SESSION_KEY must be configured before enabling sessions.
+session_repo = SQLiteSessionRepo(db, secret_key=config("APP_SESSION_KEY"))
 user_repo = SQLiteUserRepo(db)
 
 builder = AppBuilder()
@@ -176,22 +185,31 @@ Z8ter includes SQLite support with built-in session and user repositories.
 
 ### Initialize Database
 
-```bash
-# Using CLI
-z8 db init
+Choose an explicit absolute path for SQLite. The current default URL resolves to `/data/app.db`, not a project-relative path.
 
-# Or in Python
+```bash
+# Set DATABASE_URL in the process environment when using the database CLI.
+DATABASE_URL="sqlite:///$(pwd)/data/app.db" z8 db init
+```
+
+```python
+from pathlib import Path
 from z8ter.database import init_database
-db = init_database()
+
+db_path = Path("data/app.db").resolve()
+db = init_database(url=f"sqlite:///{db_path.as_posix()}")
 ```
 
 ### Using Repositories
 
 ```python
-from z8ter.database import Database, SQLiteUserRepo, SQLiteSessionRepo
-from z8ter.auth.crypto import hash_password, verify_password
+from datetime import datetime, timedelta, timezone
+from pathlib import Path
+from z8ter.database import SQLiteUserRepo, SQLiteSessionRepo, init_database
+from z8ter.auth.crypto import hash_password
 
-db = Database()  # Uses DATABASE_URL env or sqlite:///data/app.db
+db_path = Path("data/app.db").resolve()
+db = init_database(url=f"sqlite:///{db_path.as_posix()}")
 
 # User operations
 user_repo = SQLiteUserRepo(db)
@@ -230,8 +248,14 @@ Z8ter includes comprehensive security middleware.
 ### CSRF Protection
 
 ```python
-builder.use_csrf()  # Enable CSRF middleware
+builder.use_csrf()  # Enable CSRF middleware; secure cookies require HTTPS
+# Local HTTP development only: builder.use_csrf(cookie_secure=False)
 ```
+
+Form-token submissions preserve fields and uploaded files for the handler. They
+are buffered up to 8 MiB by default and return HTTP 413 above that limit. Set
+`max_form_body_size` to change it. Send `X-CSRF-Token` for larger uploads that
+should stream without CSRF buffering; application and proxy limits still apply.
 
 In templates:
 ```html
@@ -359,8 +383,9 @@ async def refresh_cache():
 builder.use_background_tasks(task_manager=tasks)
 ```
 
-`use_background_tasks()` also schedules hourly session cleanup
-(`session_repo.cleanup_expired()`) automatically. In handlers, spawn
+`use_background_tasks()` also schedules hourly session cleanup when a registered
+session repository provides `cleanup_expired()`. Tasks run in the web process and
+are not durable across restarts. In handlers, spawn
 background work without delaying the response:
 
 ```python
@@ -464,17 +489,21 @@ class Dashboard(View):
 docker build -t myapp .
 docker run -p 8000:8000 -e Z8TER_DEBUG=false myapp
 
-# Or with docker-compose
-docker compose up
 ```
+
+The bundled Compose file is a development example that mounts the host source
+over the image's assets. Build assets on the host before using it. Its optional
+`dev` profile needs additional frontend/Python setup; use the documented local
+watchers or the Docker image commands above instead. Container execution was
+not verified as part of the 0.3.1 update.
 
 ### Environment Variables
 
 | Variable | Description | Default |
 |----------|-------------|---------|
 | `Z8TER_DEBUG` | Enable debug mode | `false` |
-| `DATABASE_URL` | SQLite database URL | `sqlite:///data/app.db` |
-| `APP_SESSION_KEY` | Secret key for sessions (32+ chars) | Required |
+| `DATABASE_URL` | SQLite URL; pass a configured absolute path for project data | `sqlite:///data/app.db` (resolves to `/data/app.db`) |
+| `APP_SESSION_KEY` | Secret key for sessions (32+ chars) | Required when enabling session/auth features |
 | `VITE_DEV_SERVER` | Vite dev server URL (dev only) | - |
 | `EMAIL_PROVIDER` | Email provider: `console` or `smtp` | `console` |
 | `EMAIL_FROM` | Default sender address | - |
@@ -484,9 +513,9 @@ docker compose up
 
 ### Health Check
 
-The `/health` endpoint returns:
+When `use_health_check()` is enabled, `/health` reports the framework version (it does not probe external services):
 ```json
-{"status": "healthy", "version": "0.3.0"}
+{"status": "healthy", "version": "0.3.1"}
 ```
 
 ---
@@ -552,7 +581,7 @@ The `/health` endpoint returns:
 ## Requirements
 
 - Python 3.10+
-- Node.js 18+ (for frontend tooling)
+- Node.js 22.12+ (for frontend tooling)
 
 ---
 

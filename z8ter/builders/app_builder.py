@@ -245,6 +245,7 @@ class AppBuilder:
         secret_key: str | None = None,
         exempt_paths: Sequence[str] | None = None,
         cookie_secure: bool = True,
+        max_form_body_size: int = 8 * 1024 * 1024,
     ) -> None:
         """Enable CSRF protection middleware.
 
@@ -252,6 +253,8 @@ class AppBuilder:
             secret_key: Secret key for token signing. Defaults to APP_SESSION_KEY.
             exempt_paths: List of path prefixes to skip CSRF validation (e.g., ["/api/"]).
             cookie_secure: Set Secure flag on CSRF cookie (default: True).
+            max_form_body_size: Maximum buffered form bytes (default: 8 MiB).
+                Use the X-CSRF-Token header for larger streaming uploads.
 
         Notes:
             - CSRF tokens are validated on POST, PUT, DELETE, PATCH requests.
@@ -268,6 +271,7 @@ class AppBuilder:
                     "secret_key": secret_key,
                     "csrf_exempt_paths": list(exempt_paths or []),
                     "csrf_cookie_secure": cookie_secure,
+                    "csrf_max_form_body_size": max_form_body_size,
                 },
             )
         )

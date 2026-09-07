@@ -2,7 +2,7 @@
 # Production-ready multi-stage build
 
 # Stage 1: Build frontend assets
-FROM node:20-alpine AS frontend-builder
+FROM node:22-alpine AS frontend-builder
 
 WORKDIR /app
 
@@ -10,10 +10,11 @@ WORKDIR /app
 COPY package*.json ./
 
 # Install dependencies
-RUN npm ci --production=false
+RUN npm ci --include=dev
 
 # Copy source files
 COPY src/ ./src/
+COPY templates/ ./templates/
 COPY vite.config.ts tsconfig.json ./
 
 # Build frontend assets
@@ -47,6 +48,7 @@ COPY --chown=appuser:appuser . .
 
 # Copy built frontend assets from frontend-builder stage
 COPY --from=frontend-builder --chown=appuser:appuser /app/static/js/ ./static/js/
+COPY --from=frontend-builder --chown=appuser:appuser /app/static/css/ ./static/css/
 
 # Switch to non-root user
 USER appuser

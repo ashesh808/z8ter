@@ -15,7 +15,7 @@ A minimal starter template for building web apps with **Z8ter (Starlette + Jinja
 
 * **Python** 3.10+ (3.11+ recommended)
 * **uv** — fast Python package manager ([install guide](https://docs.astral.sh/uv/getting-started/installation/))
-* **Node.js** 18+ and **npm**
+* **Node.js** 20.19+ or 22.12+ and **npm**
 * macOS, Linux, or Windows (PowerShell)
 
 ### 2) Clone this template
@@ -62,7 +62,7 @@ Open your browser to:
 > The `dev` script runs 3 processes concurrently:
 >
 > * **CSS**: Tailwind CLI → `static/css/output.css`
-> * **TS**: TypeScript compiler → `static/js/...`
+> * **TS**: Vite build/watch → `static/js/...`
 > * **Server**: `z8 run dev` (Z8ter dev server with reload)
 
 ---
@@ -136,6 +136,7 @@ curl http://127.0.0.1:8000/api/hello/
 
 ```bash
 # 1) Build static assets
+npm run typecheck
 npm run build
 #   - Tailwind → static/css/output.css
 #   - TypeScript → static/js/...
@@ -143,7 +144,7 @@ npm run build
 # 2) Run the server (one of):
 uv run z8 run     # or `uv run z8 run --host 0.0.0.0 --port 8000`
 # or uvicorn directly if you expose your ASGI app
-# uv run uvicorn main:app --host 0.0.0.0 --port 8000
+# uv run uvicorn main:asgi_app --host 0.0.0.0 --port 8000
 ```
 
 Deploy behind Nginx/Caddy/Traefik as you normally would for an ASGI app.
@@ -166,3 +167,9 @@ Deploy behind Nginx/Caddy/Traefik as you normally would for an ASGI app.
 
 * **Add new API**
   Create another API class in `api/…` similar to `Hello` and rely on Z8ter’s route builder (already integrated in the framework).
+The starter uses Solid custom elements for optional interactivity. Database and
+authentication setup are optional. Frontend watchers rebuild assets; reload your
+browser to see the changes.
+
+For direct Uvicorn deployment, set `Z8TER_DEBUG=false` in the process environment
+before importing the app. The `z8 run prod` command selects that default for you.
